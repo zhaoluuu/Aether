@@ -204,6 +204,18 @@
                       <Plus class="w-3 h-3 mr-1" />
                       请求体
                     </Button>
+                    <Button
+                      v-if="isFixedProvider"
+                      variant="ghost"
+                      size="sm"
+                      class="h-7 text-xs px-2"
+                      title="重置请求体"
+                      :disabled="resettingDefaultRulesEndpointId === endpoint.id"
+                      @click="handleResetBodyRulesToDefault(endpoint)"
+                    >
+                      <RotateCcw class="w-3 h-3 mr-1" />
+                      重置请求体
+                    </Button>
                   </div>
                 </div>
                 <CollapsibleContent class="pt-3">
@@ -829,6 +841,7 @@ import { log } from '@/utils/logger'
 import AlertDialog from '@/components/common/AlertDialog.vue'
 import {
   createEndpoint,
+  getDefaultBodyRules,
   updateEndpoint,
   deleteEndpoint,
   type ProviderEndpoint,
@@ -1084,6 +1097,7 @@ function handleBodyRuleDragEnd(endpointId: string) {
 // 状态
 const addingEndpoint = ref(false)
 const savingEndpointId = ref<string | null>(null)
+const resettingDefaultRulesEndpointId = ref<string | null>(null)
 const deletingEndpointId = ref<string | null>(null)
 const togglingEndpointId = ref<string | null>(null)
 const togglingFormatEndpointId = ref<string | null>(null)
@@ -1114,6 +1128,9 @@ function setBodyRuleHelpOpen(endpointId: string, open: boolean) {
 
 // 每个端点的编辑状态（内联编辑）
 const endpointEditStates = ref<Record<string, EndpointEditState>>({})
+const defaultBodyRulesByFormat = ref<Record<string, BodyRule[]>>({})
+const defaultBodyRulesLoaded = ref<Record<string, boolean>>({})
+const loadingDefaultBodyRulesByFormat = ref<Record<string, boolean>>({})
 
 // 系统保留的 header 名称（不允许用户设置）
 const RESERVED_HEADERS = new Set([
@@ -1260,6 +1277,40 @@ const deleteConfirmDescription = computed(() => {
   const formatLabel = formatApiFormat(endpointToDelete.value.api_format)
   return `确定要删除 ${formatLabel} 端点吗？关联密钥将移除对该 API 格式的支持。`
 })
+
+async function loadDefaultBodyRulesForFormat(apiFormat: string, force = false): Promise<BodyRule[]> {
+  if (!apiFormat) return []
+  if (!force && defaultBodyRulesLoaded.value[apiFormat]) {
+    return defaultBodyRulesByFormat.value[apiFormat] || []
+  }
+  if (loadingDefaultBodyRulesByFormat.value[apiFormat]) {
+    return defaultBodyRulesByFormat.value[apiFormat] || []
+  }
+
+  loadingDefaultBodyRulesByFormat.value[apiFormat] = true
+  try {
+    const response = await getDefaultBodyRules(apiFormat)
+    const normalized = response.api_format || apiFormat
+    const rules = response.body_rules || []
+    defaultBodyRulesByFormat.value[normalized] = rules
+    defaultBodyRulesByFormat.value[apiFormat] = rules
+    defaultBodyRulesLoaded.value[normalized] = true
+    defaultBodyRulesLoaded.value[apiFormat] = true
+    return rules
+  } catch (error: unknown) {
+    defaultBodyRulesByFormat.value[apiFormat] = []
+    defaultBodyRulesLoaded.value[apiFormat] = true
+    log.warn('加载默认请求体规则失败', apiFormat, error)
+    return []
+  } finally {
+    loadingDefaultBodyRulesByFormat.value[apiFormat] = false
+  }
+}
+
+async function preloadDefaultBodyRules(endpoints: ProviderEndpoint[]): Promise<void> {
+  const formats = Array.from(new Set(endpoints.map(e => e.api_format).filter(Boolean)))
+  await Promise.all(formats.map(fmt => loadDefaultBodyRulesForFormat(fmt)))
+}
 
 // 获取指定 API 格式的默认路径
 function getDefaultPath(apiFormat: string, baseUrl?: string): string {
@@ -2052,6 +2103,37 @@ function resetEndpointChanges(endpoint: ProviderEndpoint) {
   endpointEditStates.value[endpoint.id] = initEndpointEditState(endpoint)
 }
 
+async function handleResetBodyRulesToDefault(endpoint: ProviderEndpoint) {
+  resettingDefaultRulesEndpointId.value = endpoint.id
+  try {
+    const defaultRules = await loadDefaultBodyRulesForFormat(endpoint.api_format, true)
+    if (!defaultRules.length) {
+      showError('该端点没有默认请求体规则')
+      return
+    }
+
+    if (!endpointEditStates.value[endpoint.id]) {
+      endpointEditStates.value[endpoint.id] = initEndpointEditState(endpoint)
+    }
+    const state = endpointEditStates.value[endpoint.id]
+    if (!state) return
+
+    const resetState = initEndpointEditState({
+      ...endpoint,
+      body_rules: defaultRules,
+    })
+    state.bodyRules = resetState.bodyRules
+    endpointRulesExpanded.value[endpoint.id] = (state.rules.length + state.bodyRules.length) > 0
+    clearBodyRuleDragState(endpoint.id)
+    clearBodyRuleSelectOpen(endpoint.id)
+    success('已重置请求体为默认规则，请点击保存生效')
+  } catch (error: unknown) {
+    showError(parseApiError(error, '重置失败'), '错误')
+  } finally {
+    resettingDefaultRulesEndpointId.value = null
+  }
+}
+
 // 将可编辑规则数组转换为 API 需要的 HeaderRule[]
 function rulesToHeaderRules(rules: EditableRule[]): HeaderRule[] | null {
   const result: HeaderRule[] = []
@@ -2126,6 +2208,7 @@ watch(() => props.modelValue, (open) => {
       const hasRules = (endpoint.header_rules?.length || 0) + (endpoint.body_rules?.length || 0) > 0
       endpointRulesExpanded.value[endpoint.id] = hasRules
     }
+    void preloadDefaultBodyRules(localEndpoints.value)
   } else {
     // 关闭对话框时完全清空新端点表单
     newEndpoint.value = { api_format: '', base_url: '', custom_path: '' }
@@ -2140,6 +2223,12 @@ watch(() => props.endpoints, (endpoints) => {
       if (!endpointEditStates.value[endpoint.id]) {
         endpointEditStates.value[endpoint.id] = initEndpointEditState(endpoint)
       }
+    }
+    const newFormats = localEndpoints.value
+      .filter(e => e.api_format && !defaultBodyRulesLoaded.value[e.api_format])
+      .map(e => ({ api_format: e.api_format }) as ProviderEndpoint)
+    if (newFormats.length) {
+      void preloadDefaultBodyRules(newFormats)
     }
   }
 }, { deep: true })
