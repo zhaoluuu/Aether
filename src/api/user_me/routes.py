@@ -771,7 +771,7 @@ class GetUsageAdapter(AuthenticatedApiAdapter):
 
     @cache_result(
         key_prefix="user:usage:records",
-        ttl=CacheTTL.ADMIN_USAGE_RECORDS,
+        ttl=3,  # 使用记录页强调实时性，避免 15s 缓存导致列表滞后
         user_specific=True,
         vary_by=[
             "time_range.start_date",

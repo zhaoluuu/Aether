@@ -161,7 +161,7 @@
         size="icon"
         class="h-8 w-8"
         :class="autoRefresh ? 'text-primary' : ''"
-        :title="autoRefresh ? '点击关闭自动刷新' : '点击开启自动刷新（每5秒刷新）'"
+        :title="autoRefresh ? '点击关闭自动刷新' : '点击开启自动刷新（每3秒刷新）'"
         @click="$emit('update:autoRefresh', !autoRefresh)"
       >
         <RefreshCcw
@@ -263,7 +263,11 @@
             <span
               v-if="record.status === 'pending' || record.status === 'streaming'"
               class="text-primary tabular-nums"
-            >{{ getElapsedTime(record) }}</span>
+            ><ElapsedTimeText
+              :created-at="record.created_at"
+              :status="record.status"
+              :response-time-ms="record.response_time_ms ?? null"
+            /></span>
             <span
               v-else-if="record.response_time_ms != null"
               class="tabular-nums"
@@ -582,9 +586,11 @@
               class="flex flex-col items-end text-xs gap-0.5"
             >
               <span class="text-muted-foreground">-</span>
-              <span class="text-primary tabular-nums">
-                {{ getElapsedTime(record) }}
-              </span>
+              <span class="text-primary tabular-nums"><ElapsedTimeText
+                :created-at="record.created_at"
+                :status="record.status"
+                :response-time-ms="record.response_time_ms ?? null"
+              /></span>
             </div>
             <!-- streaming 状态：首字固定 + 总时间增长 -->
             <div
@@ -599,9 +605,11 @@
                 v-else
                 class="text-muted-foreground"
               >-</span>
-              <span class="text-primary tabular-nums">
-                {{ getElapsedTime(record) }}
-              </span>
+              <span class="text-primary tabular-nums"><ElapsedTimeText
+                :created-at="record.created_at"
+                :status="record.status"
+                :response-time-ms="record.response_time_ms ?? null"
+              /></span>
             </div>
             <!-- 已完成状态：首字 + 总耗时 -->
             <div
@@ -645,7 +653,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { useDebounceFn, useIntervalFn } from '@vueuse/core'
+import { useDebounceFn } from '@vueuse/core'
 import {
   TableCard,
   Badge,
@@ -671,6 +679,7 @@ import { useRowClick } from '@/composables/useRowClick'
 import { formatApiFormat } from '@/api/endpoints/types/api-format'
 import type { DateRangeParams, UsageRecord } from '../types'
 import { TimeRangePicker } from '@/components/common'
+import ElapsedTimeText from './ElapsedTimeText.vue'
 
 export interface UserOption {
   id: string
@@ -756,50 +765,6 @@ watch(localSearch, (value) => {
   emitSearchDebounced(value)
 })
 
-// 动态计时器相关
-const now = ref(Date.now())
-
-// 检查是否有活跃请求
-const hasActiveRecords = computed(() => {
-  return props.records.some(r => r.status === 'pending' || r.status === 'streaming')
-})
-
-// 使用 VueUse 的 useIntervalFn 管理计时器（自动清理）
-const { pause: stopTimer, resume: startTimer } = useIntervalFn(
-  () => { now.value = Date.now() },
-  500,
-  { immediate: false }
-)
-
-// 计算活跃请求的实时耗时
-function getElapsedTime(record: UsageRecord): string {
-  if (record.status !== 'pending' && record.status !== 'streaming') {
-    // 非活跃状态，显示实际响应时间
-    if (record.response_time_ms) {
-      return `${(record.response_time_ms / 1000).toFixed(2)}s`
-    }
-    return '-'
-  }
-
-  // 活跃状态，计算实时耗时
-  if (!record.created_at) return '-'
-
-  const createdAt = new Date(record.created_at).getTime()
-  const elapsed = now.value - createdAt
-
-  if (elapsed < 0) return '0.00s'
-  return `${(elapsed / 1000).toFixed(2)}s`
-}
-
-// 监听活跃记录状态，自动启动/停止计时器
-watch(hasActiveRecords, (hasActive) => {
-  if (hasActive) {
-    startTimer()
-  } else {
-    stopTimer()
-  }
-}, { immediate: true })
-
 // 使用复用的行点击逻辑
 const { handleMouseDown, shouldTriggerRowClick } = useRowClick()
 
@@ -810,7 +775,7 @@ function handleRowClick(event: MouseEvent, id: string) {
   emit('showDetail', id)
 }
 
-// useIntervalFn 和 useDebounceFn 自动处理清理，无需 onUnmounted
+// useDebounceFn 自动处理清理，无需 onUnmounted
 
 // 判断是否应该显示格式转换信息
 // 包括：1. 跨格式转换（has_format_conversion=true）2. 同族格式差异（如 CLAUDE_CLI → CLAUDE）

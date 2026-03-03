@@ -843,7 +843,7 @@ class AdminUsageRecordsAdapter(AdminApiAdapter):
 
     @cache_result(
         key_prefix="admin:usage:records",
-        ttl=CacheTTL.ADMIN_USAGE_RECORDS,
+        ttl=3,  # 使用记录页强调实时性，避免 15s 缓存导致列表滞后
         user_specific=False,
         vary_by=[
             "start_date",

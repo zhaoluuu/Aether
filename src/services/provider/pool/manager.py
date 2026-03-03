@@ -302,12 +302,20 @@ class PoolManager:
             )
 
         class _KeyCandidate:
-            __slots__ = ("key", "is_skipped", "skip_reason")
+            __slots__ = (
+                "key",
+                "is_skipped",
+                "skip_reason",
+                "_pool_extra_data",
+                "_pool_scheduling_trace",
+            )
 
             def __init__(self, key: ProviderAPIKey) -> None:
                 self.key = key
                 self.is_skipped = False
                 self.skip_reason: str | None = None
+                self._pool_extra_data: dict | None = None
+                self._pool_scheduling_trace: PoolSchedulingTrace | None = None
 
         wrappers = [_KeyCandidate(k) for k in keys]
         reordered_wrappers = await self.reorder_candidates(session_uuid, wrappers)  # type: ignore[arg-type]

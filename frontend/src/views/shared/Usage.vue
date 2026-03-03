@@ -249,8 +249,8 @@ let autoRefreshTimer: ReturnType<typeof setInterval> | null = null
 let globalAutoRefreshTimer: ReturnType<typeof setInterval> | null = null
 let refreshInFlight: Promise<void> | null = null
 const AUTO_REFRESH_INTERVAL = 1000 // 1秒刷新一次（用于活跃请求）
-const GLOBAL_AUTO_REFRESH_INTERVAL = 5000 // 5秒刷新一次（全局自动刷新）
-const globalAutoRefresh = ref(false) // 全局自动刷新开关
+const GLOBAL_AUTO_REFRESH_INTERVAL = 3000 // 3秒刷新一次（全局自动刷新）
+const globalAutoRefresh = ref(true) // 全局自动刷新开关（默认开启）
 const isPageVisible = ref(typeof document === 'undefined' ? true : !document.hidden)
 
 // 轮询活跃请求状态（轻量级，只更新状态变化的记录）
@@ -471,6 +471,10 @@ onMounted(async () => {
   // 用户页面：loadStats 已包含记录加载，不需要单独调用 loadRecords
 
   await Promise.allSettled(tasks)
+
+  if (globalAutoRefresh.value && isPageVisible.value) {
+    startGlobalAutoRefresh()
+  }
 })
 
 // 处理时间范围变化
