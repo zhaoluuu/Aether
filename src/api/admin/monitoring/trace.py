@@ -163,18 +163,17 @@ class AdminGetRequestTraceAdapter(AdminApiAdapter):
     async def handle(self, context: ApiRequestContext) -> Any:  # type: ignore[override]
         db = context.db
 
-        # 查询所有候选后，默认只展示已发生调度结果的子集：
-        # - 过滤 available/unused（预创建但未实际参与本次调度）
-        # - 若过滤后为空（例如请求尚未开始），回退到全量，避免前端空白
+        # 查询并展示该请求的全量候选：
+        # - 包含 available/unused（未执行）
+        # - 包含 skipped（跳过）
+        # - 包含 pending/streaming/success/failed/cancelled（执行中/结果）
         all_candidates = RequestCandidateService.get_candidates_by_request_id(db, self.request_id)
 
         # 如果没有数据，返回 404
         if not all_candidates:
             raise HTTPException(status_code=404, detail="Request not found")
 
-        candidates = [
-            c for c in all_candidates if c.status not in ("available", "unused")
-        ] or all_candidates
+        candidates = all_candidates
 
         # 计算总延迟（只统计已完成的候选：success, failed, cancelled）
         # 使用显式的 is not None 检查，避免过滤掉 0ms 的快速响应

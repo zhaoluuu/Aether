@@ -754,6 +754,11 @@ const getProviderDisplayName = (attempt: CandidateRecord | null | undefined): st
   return providerName ? normalizeProviderName(providerName) : '未知'
 }
 
+const normalizeProviderIdentity = (value: unknown): string => {
+  if (typeof value !== 'string') return ''
+  return normalizeProviderName(value).trim().toLowerCase()
+}
+
 const buildProviderGroups = (items: CandidateRecord[]): NodeGroup[] => {
   const groups: NodeGroup[] = []
   let currentGroup: NodeGroup | null = null
@@ -829,7 +834,31 @@ const groupedTimeline = computed<NodeGroup[]>(() => {
     isPoolGroup: true,
   }
 
-  return [poolGroup, ...providerGroups]
+  const poolProviderIds = new Set(
+    poolAttempts
+      .map(item => String(item.provider_id || '').trim())
+      .filter(Boolean),
+  )
+  const poolProviderNames = new Set(
+    poolAttempts
+      .map(item => normalizeProviderIdentity(item.provider_name))
+      .filter(Boolean),
+  )
+
+  const dedupedProviderGroups = providerGroups.filter((group) => {
+    const sameProviderById = group.allAttempts.some((attempt) => {
+      const providerId = String(attempt.provider_id || '').trim()
+      return providerId !== '' && poolProviderIds.has(providerId)
+    })
+    if (sameProviderById) return false
+
+    const groupName = normalizeProviderIdentity(group.primary.provider_name || group.providerName)
+    if (groupName && poolProviderNames.has(groupName)) return false
+
+    return true
+  })
+
+  return [poolGroup, ...dedupedProviderGroups]
 })
 
 // 格式转换分界点索引（首个 hasConversion=true 的 group index）

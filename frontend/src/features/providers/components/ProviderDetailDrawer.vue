@@ -35,7 +35,7 @@
                     :variant="provider.is_active ? 'default' : 'secondary'"
                     class="text-xs shrink-0"
                   >
-                    {{ provider.is_active ? '活跃' : '已停用' }}
+                    {{ provider.is_active ? '活跃' : '停用' }}
                   </Badge>
                 </div>
                 <div class="flex items-center gap-1 shrink-0">

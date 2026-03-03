@@ -551,7 +551,7 @@
                       :variant="apiKey.is_active ? 'success' : 'secondary'"
                       class="text-xs"
                     >
-                      {{ apiKey.is_active ? '活跃' : '已禁用' }}
+                      {{ apiKey.is_active ? '活跃' : '禁用' }}
                     </Badge>
                     <Badge
                       v-if="apiKey.is_locked"

@@ -1229,7 +1229,7 @@ const batchManageShortcuts = computed(() => {
   const defs: { label: string; description: string; filter: (m: GlobalModelResponse) => boolean }[] = [
     { label: '无提供商', description: '没有关联任何提供商的模型', filter: m => (m.provider_count || 0) === 0 },
     { label: '无活跃提供商', description: '有提供商但没有活跃提供商的模型', filter: m => (m.active_provider_count || 0) === 0 && (m.provider_count || 0) > 0 },
-    { label: '已禁用', description: '被禁用的模型', filter: m => !m.is_active },
+    { label: '禁用', description: '被禁用的模型', filter: m => !m.is_active },
     { label: '未调用', description: '没有调用记录的模型', filter: m => (m.usage_count || 0) === 0 },
     { label: '无价格', description: '没有配置任何价格的模型', filter: m => hasNoPrice(m) },
   ]

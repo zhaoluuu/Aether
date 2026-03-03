@@ -323,7 +323,7 @@
                           : key.is_active
                             ? 'text-foreground/70 hover:bg-muted hover:text-foreground'
                             : 'text-muted-foreground hover:bg-muted hover:text-foreground'"
-                        :title="!key.provider_active ? 'Provider 已停用' : key.is_active ? '点击停用' : '点击启用'"
+                        :title="!key.provider_active ? 'Provider 停用' : key.is_active ? '点击停用' : '点击启用'"
                         :disabled="!key.provider_active"
                         @click.stop="toggleKeyActive(format, key)"
                       >

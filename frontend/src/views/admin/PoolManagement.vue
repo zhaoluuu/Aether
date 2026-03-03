@@ -53,15 +53,21 @@
                 <Ban class="w-3.5 h-3.5" />
               </Button>
               <RefreshButton
-                :loading="overviewLoading || keysLoading"
-                @click="refresh"
+                :loading="keysLoading"
+                @click="refreshCurrentPage"
               />
             </div>
           </div>
           <!-- Filters (mobile) -->
           <div class="flex items-center gap-2">
-            <Select v-model="selectedProviderIdProxy">
-              <SelectTrigger class="flex-1 h-8 text-xs border-border/60">
+            <Select
+              v-model="selectedProviderIdProxy"
+              :disabled="providerSelectDisabled"
+            >
+              <SelectTrigger
+                class="flex-1 h-8 text-xs border-border/60"
+                :disabled="providerSelectDisabled"
+              >
                 <SelectValue placeholder="选择 Provider" />
               </SelectTrigger>
               <SelectContent>
@@ -90,7 +96,7 @@
                   冷却中
                 </SelectItem>
                 <SelectItem value="inactive">
-                  已禁用
+                  禁用
                 </SelectItem>
               </SelectContent>
             </Select>
@@ -124,8 +130,14 @@
             </Badge>
           </div>
           <div class="flex items-center gap-2">
-            <Select v-model="selectedProviderIdProxy">
-              <SelectTrigger class="w-36 h-8 text-xs border-border/60">
+            <Select
+              v-model="selectedProviderIdProxy"
+              :disabled="providerSelectDisabled"
+            >
+              <SelectTrigger
+                class="w-36 h-8 text-xs border-border/60"
+                :disabled="providerSelectDisabled"
+              >
                 <SelectValue placeholder="选择 Provider" />
               </SelectTrigger>
               <SelectContent>
@@ -167,7 +179,7 @@
                   冷却中
                 </SelectItem>
                 <SelectItem value="inactive">
-                  已禁用
+                  禁用
                 </SelectItem>
               </SelectContent>
             </Select>
@@ -206,8 +218,8 @@
               <Ban class="w-3.5 h-3.5" />
             </Button>
             <RefreshButton
-              :loading="overviewLoading || keysLoading"
-              @click="refresh"
+              :loading="keysLoading"
+              @click="refreshCurrentPage"
             />
           </div>
         </div>
@@ -384,20 +396,18 @@
                 >
                   <div
                     v-if="quotaProgressMap[key.key_id]?.length"
-                    :class="
-                      quotaProgressMap[key.key_id]?.length === 1
-                        ? 'h-[33px] max-w-[220px] flex items-center'
-                        : 'grid grid-rows-[16px_16px] gap-1 max-w-[220px]'
-                    "
+                    class="space-y-1 max-w-[220px]"
                   >
                     <div
                       v-for="(item, idx) in quotaProgressMap[key.key_id].slice(0, 2)"
                       :key="`${key.key_id}-quota-${idx}`"
-                      class="w-full h-4"
-                      :title="item.detail || ''"
+                      class="w-full"
                     >
-                      <div class="h-full grid grid-cols-[20px_minmax(0,1fr)_46px] items-center gap-1.5 text-[10px] leading-tight">
-                        <span class="text-muted-foreground whitespace-nowrap text-right tabular-nums">
+                      <div class="h-4 grid grid-cols-[20px_minmax(0,1fr)_42px] items-center gap-1 text-[10px] leading-tight">
+                        <span
+                          class="text-muted-foreground whitespace-nowrap text-right tabular-nums"
+                          :title="getQuotaProgressTooltip(item)"
+                        >
                           {{ getQuotaProgressLabel(item.label) }}
                         </span>
                         <div class="relative flex-1 h-1.5 bg-border rounded-full overflow-hidden">
@@ -408,7 +418,7 @@
                           />
                         </div>
                         <span
-                          class="tabular-nums text-right"
+                          class="tabular-nums text-right whitespace-nowrap"
                           :class="getQuotaRemainingClassByRemaining(item.remainingPercent)"
                         >
                           {{ item.remainingPercent.toFixed(1) }}%
@@ -1027,10 +1037,12 @@
                     v-for="(item, idx) in quotaProgressMap[key.key_id]"
                     :key="`${key.key_id}-quota-mobile-${idx}`"
                     class="w-full"
-                    :title="item.detail || ''"
                   >
-                    <div class="grid grid-cols-[20px_minmax(0,1fr)_46px] items-center gap-1.5 text-[10px] leading-tight">
-                      <span class="text-muted-foreground whitespace-nowrap text-right tabular-nums">
+                    <div class="grid grid-cols-[20px_minmax(0,1fr)_42px] items-center gap-1 text-[10px] leading-tight">
+                      <span
+                        class="text-muted-foreground whitespace-nowrap text-right tabular-nums"
+                        :title="getQuotaProgressTooltip(item)"
+                      >
                         {{ getQuotaProgressLabel(item.label) }}
                       </span>
                       <div class="relative flex-1 h-1.5 bg-border rounded-full overflow-hidden">
@@ -1041,7 +1053,7 @@
                         />
                       </div>
                       <span
-                        class="tabular-nums text-right"
+                        class="tabular-nums text-right whitespace-nowrap"
                         :class="getQuotaRemainingClassByRemaining(item.remainingPercent)"
                       >
                         {{ item.remainingPercent.toFixed(1) }}%
@@ -1203,6 +1215,7 @@ import {
   exportKey,
   deleteEndpointKey,
   updateProviderKey,
+  refreshProviderQuota,
 } from '@/api/endpoints/keys'
 import { refreshProviderOAuth } from '@/api/endpoints/provider_oauth'
 import { recoverKeyHealth } from '@/api/endpoints/health'
@@ -1235,10 +1248,22 @@ async function loadOverview() {
   overviewLoading.value = true
   try {
     const res = await getPoolOverview()
-    poolProviders.value = res.items.filter(item => item.pool_enabled)
-    // Auto-select first provider if none selected
-    if (!selectedProviderId.value && res.items.length > 0) {
-      await selectProvider(res.items[0].provider_id)
+    const enabledProviders = res.items.filter(item => item.pool_enabled)
+    poolProviders.value = enabledProviders
+
+    // Keep selected provider aligned with dropdown options.
+    const selectedId = selectedProviderId.value
+    const selectedStillExists = Boolean(
+      selectedId && enabledProviders.some(item => item.provider_id === selectedId),
+    )
+
+    if (!selectedStillExists) {
+      if (enabledProviders.length > 0) {
+        await selectProvider(enabledProviders[0].provider_id)
+      } else {
+        selectedProviderId.value = null
+        selectedProviderData.value = null
+      }
     }
   } catch (err) {
     showError(parseApiError(err))
@@ -1260,6 +1285,8 @@ const selectedProviderIdProxy = computed({
     }
   },
 })
+
+const providerSelectDisabled = computed(() => poolProviders.value.length === 0)
 
 const selectedProviderConfig = computed<PoolAdvancedConfig | null>(() => {
   return (selectedProviderData.value as Record<string, unknown> | null)?.pool_advanced as PoolAdvancedConfig | null ?? null
@@ -1303,15 +1330,14 @@ async function loadProviderData(id: string) {
 }
 
 async function refresh() {
-  await loadOverview()
-  if (selectedProviderId.value) {
-    await loadKeys()
-  }
+  await loadKeys()
 }
 
 // --- Keys ---
 const keyPage = ref<PoolKeysPageResponse>({ total: 0, page: 1, page_size: 50, keys: [] })
 const keysLoading = ref(false)
+const refreshingCurrentPageQuota = ref(false)
+const queuedCurrentPageQuotaRefresh = ref(false)
 const searchQuery = ref('')
 const statusFilter = ref('all')
 const currentPage = ref(1)
@@ -1336,6 +1362,7 @@ interface QuotaProgressItem {
   label: string
   remainingPercent: number
   detail?: string
+  resetAtSeconds?: number | null
 }
 
 const quotaProgressMap = computed<Record<string, QuotaProgressItem[]>>(() => {
@@ -1345,6 +1372,65 @@ const quotaProgressMap = computed<Record<string, QuotaProgressItem[]>>(() => {
   }
   return map
 })
+
+const quotaRefreshSupported = computed(() => {
+  return selectedProviderType.value === 'codex'
+    || selectedProviderType.value === 'kiro'
+    || selectedProviderType.value === 'antigravity'
+})
+
+function getCurrentPageQuotaKeyIds(): string[] {
+  const ids: string[] = []
+  const seen = new Set<string>()
+  for (const key of keyPage.value.keys) {
+    const id = String(key.key_id || '').trim()
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    ids.push(id)
+  }
+  return ids
+}
+
+async function refreshCurrentPageQuotaInBackground(options: { silent?: boolean } = {}) {
+  if (!selectedProviderId.value || !quotaRefreshSupported.value) return
+
+  const providerId = selectedProviderId.value
+  const keyIds = getCurrentPageQuotaKeyIds()
+  if (keyIds.length === 0) return
+
+  if (refreshingCurrentPageQuota.value) {
+    queuedCurrentPageQuotaRefresh.value = true
+    return
+  }
+
+  refreshingCurrentPageQuota.value = true
+  try {
+    const result = await refreshProviderQuota(providerId, keyIds)
+    const successCount = Number(result.success || 0)
+    const failedCount = Number(result.failed || 0)
+
+    // 刷新当前页数据，展示最新额度与状态
+    if (selectedProviderId.value === providerId) {
+      await loadKeys()
+    }
+
+    if (!options.silent) {
+      success(`当前页额度刷新完成：成功 ${successCount}，失败 ${failedCount}`)
+    }
+  } catch (err) {
+    showError(parseApiError(err, '刷新当前页额度失败'))
+  } finally {
+    refreshingCurrentPageQuota.value = false
+    if (queuedCurrentPageQuotaRefresh.value) {
+      queuedCurrentPageQuotaRefresh.value = false
+      void refreshCurrentPageQuotaInBackground(options)
+    }
+  }
+}
+
+async function refreshCurrentPage() {
+  await refresh()
+}
 
 async function loadKeys() {
   if (!selectedProviderId.value) return
@@ -1659,7 +1745,19 @@ async function toggleKeyActive(key: PoolKeyDetail) {
     const nextStatus = !key.is_active
     await updateProviderKey(key.key_id, { is_active: nextStatus })
     key.is_active = nextStatus
+    if (nextStatus) {
+      delete key.scheduling_label
+      delete key.scheduling_status
+      if (key.scheduling_reason === 'manual_disabled') {
+        delete key.scheduling_reason
+      }
+    } else {
+      key.scheduling_label = '禁用'
+      key.scheduling_status = 'blocked'
+      key.scheduling_reason = 'manual_disabled'
+    }
     success(nextStatus ? '账号已启用' : '账号已停用')
+    await loadKeys()
   } catch (err) {
     showError(parseApiError(err))
   } finally {
@@ -1727,7 +1825,11 @@ function getSchedulingStatus(key: PoolKeyDetail): 'available' | 'degraded' | 'bl
 }
 
 function getSchedulingBadgeLabel(key: PoolKeyDetail): string {
-  if (key.scheduling_label) return key.scheduling_label
+  const rawLabel = String(key.scheduling_label || '').trim()
+  if (rawLabel) {
+    if (rawLabel === '禁用' || rawLabel === '停用') return '禁用'
+    return rawLabel
+  }
 
   if (!key.is_active) return '禁用'
   if (key.cooldown_reason) return '冷却'
@@ -1965,6 +2067,14 @@ function getQuotaProgressLabel(label: string): string {
   return label
 }
 
+function getQuotaProgressTooltip(item: QuotaProgressItem): string {
+  const detail = item.detail?.trim() || ''
+  if ((item.label === '5H' || item.label === '周') && item.resetAtSeconds != null) {
+    return `${formatQuotaInlineCountdown(item.resetAtSeconds)} 后重置`
+  }
+  return detail
+}
+
 function getQuotaLabelOrder(label: string): number {
   if (label === '5H') return 0
   if (label === '周') return 1
@@ -1978,6 +2088,49 @@ function clampPercent(value: number): number {
   if (value < 0) return 0
   if (value > 100) return 100
   return value
+}
+
+function parseQuotaResetRemainingSeconds(detail: string | undefined): number | null {
+  if (!detail) return null
+  const text = detail.replace(/\s+/g, '')
+
+  if (text.includes('已重置')) return 0
+  if (text.includes('即将重置')) return 1
+  if (!text.includes('后重置')) return null
+
+  const dayMatch = text.match(/(\d+)天/)
+  const hourMatch = text.match(/(\d+)小时/)
+  const minuteMatch = text.match(/(\d+)分钟/)
+  const secondMatch = text.match(/(\d+)秒/)
+
+  const days = dayMatch ? Number(dayMatch[1]) : 0
+  const hours = hourMatch ? Number(hourMatch[1]) : 0
+  const minutes = minuteMatch ? Number(minuteMatch[1]) : 0
+  const seconds = secondMatch ? Number(secondMatch[1]) : 0
+  const total = days * 86400 + hours * 3600 + minutes * 60 + seconds
+
+  if (total <= 0) return 1
+  return total
+}
+
+function formatQuotaInlineCountdown(resetAtSeconds: number): string {
+  // 触发响应式更新，保持倒计时每秒刷新
+  void countdownTick.value
+
+  const now = Math.floor(Date.now() / 1000)
+  const remain = Math.max(0, Math.floor(resetAtSeconds - now))
+  const days = Math.floor(remain / 86400)
+  const hours = Math.floor((remain % 86400) / 3600)
+  const minutes = Math.floor((remain % 3600) / 60)
+  const seconds = remain % 60
+
+  if (days > 0) {
+    return `${days}d${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+  }
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, '0')}`
+  }
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
 function parseQuotaProgressItems(quotaText: string | null | undefined): QuotaProgressItem[] {
@@ -1997,11 +2150,16 @@ function parseQuotaProgressItems(quotaText: string | null | undefined): QuotaPro
     const remainingPercent = clampPercent(Number(rawPercent))
     const label = normalizeQuotaLabel(rawLabel)
     const detail = rawTail.trim().replace(/^[()]+|[()]+$/g, '').trim()
+    const resetRemainingSeconds = parseQuotaResetRemainingSeconds(detail || undefined)
+    const resetAtSeconds = resetRemainingSeconds == null
+      ? null
+      : Math.floor(Date.now() / 1000) + resetRemainingSeconds
 
     items.push({
       label,
       remainingPercent,
       detail: detail || undefined,
+      resetAtSeconds,
     })
   }
 
@@ -2064,5 +2222,6 @@ function formatRelativeTime(isoStr: string): string {
 onMounted(async () => {
   startCountdownTimer()
   await loadOverview()
+  void refreshCurrentPageQuotaInBackground({ silent: true })
 })
 </script>

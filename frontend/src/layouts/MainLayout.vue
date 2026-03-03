@@ -556,8 +556,8 @@ const navigation = computed(() => {
       items: [
         { name: '用户管理', href: '/admin/users', icon: Users },
         { name: '提供商', href: '/admin/providers', icon: FolderTree },
-        { name: '号池管理', href: '/admin/pool', icon: Database },
         { name: '模型管理', href: '/admin/models', icon: Layers },
+        { name: '号池管理', href: '/admin/pool', icon: Database },
         { name: '独立密钥', href: '/admin/keys', icon: Key },
         { name: '异步任务', href: '/admin/async-tasks', icon: Zap },
         { name: '使用记录', href: '/admin/usage', icon: BarChart3 },

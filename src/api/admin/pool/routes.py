@@ -234,6 +234,28 @@ def _format_quota_value(value: float) -> str:
     return f"{value:.1f}"
 
 
+def _format_reset_after(seconds_raw: Any) -> str | None:
+    seconds = _to_float(seconds_raw)
+    if seconds is None:
+        return None
+
+    total_seconds = int(seconds)
+    if total_seconds <= 0:
+        return "已重置"
+
+    days = total_seconds // 86400
+    hours = (total_seconds % 86400) // 3600
+    minutes = (total_seconds % 3600) // 60
+
+    if days > 0:
+        return f"{days}天{hours}小时后重置"
+    if hours > 0:
+        return f"{hours}小时{minutes}分钟后重置"
+    if minutes > 0:
+        return f"{minutes}分钟后重置"
+    return "即将重置"
+
+
 def _build_codex_account_quota(upstream_metadata: dict[str, Any]) -> str | None:
     codex = upstream_metadata.get("codex")
     if not isinstance(codex, dict):
@@ -243,11 +265,19 @@ def _build_codex_account_quota(upstream_metadata: dict[str, Any]) -> str | None:
 
     primary_used = _to_float(codex.get("primary_used_percent"))
     if primary_used is not None:
-        parts.append(f"周剩余 {_format_percent(100.0 - primary_used)}")
+        part = f"周剩余 {_format_percent(100.0 - primary_used)}"
+        reset_text = _format_reset_after(codex.get("primary_reset_seconds"))
+        if reset_text:
+            part = f"{part} ({reset_text})"
+        parts.append(part)
 
     secondary_used = _to_float(codex.get("secondary_used_percent"))
     if secondary_used is not None:
-        parts.append(f"5H剩余 {_format_percent(100.0 - secondary_used)}")
+        part = f"5H剩余 {_format_percent(100.0 - secondary_used)}"
+        reset_text = _format_reset_after(codex.get("secondary_reset_seconds"))
+        if reset_text:
+            part = f"{part} ({reset_text})"
+        parts.append(part)
 
     if parts:
         return " | ".join(parts)

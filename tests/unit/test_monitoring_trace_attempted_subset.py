@@ -42,7 +42,7 @@ def _context() -> SimpleNamespace:
     )
 
 
-def test_trace_prefers_attempted_subset(monkeypatch: object) -> None:
+def test_trace_returns_all_candidates_including_unused(monkeypatch: object) -> None:
     candidates = [
         _candidate(status="available"),
         _candidate(status="unused"),
@@ -57,13 +57,13 @@ def test_trace_prefers_attempted_subset(monkeypatch: object) -> None:
     adapter = AdminGetRequestTraceAdapter(request_id="req-1")
     response = asyncio.run(adapter.handle(_context()))
 
-    assert response.total_candidates == 1
-    assert len(response.candidates) == 1
-    assert response.candidates[0].status == "failed"
+    assert response.total_candidates == 3
+    assert len(response.candidates) == 3
+    assert {c.status for c in response.candidates} == {"available", "unused", "failed"}
     assert response.total_latency_ms == 123
 
 
-def test_trace_falls_back_to_all_when_no_attempted(monkeypatch: object) -> None:
+def test_trace_returns_unattempted_candidates(monkeypatch: object) -> None:
     candidates = [
         _candidate(status="available"),
         _candidate(status="unused"),

@@ -70,7 +70,7 @@ class PoolSchedulingDimension(Protocol):
 @dataclass(frozen=True, slots=True)
 class _ManualEnableDimension:
     code: str = "manual_disabled"
-    label: str = "已禁用"
+    label: str = "禁用"
     source: str = "manual"
     weight: int = 8
 
