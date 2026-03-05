@@ -485,14 +485,6 @@
                         </span>
                       </template>
                       <Badge
-                        v-if="getAccountAlertLabel(key)"
-                        variant="destructive"
-                        class="text-[9px] px-1 py-0 h-4 shrink-0"
-                        :title="getAccountAlertTitle(key)"
-                      >
-                        {{ getAccountAlertLabel(key) }}
-                      </Badge>
-                      <Badge
                         v-if="key.oauth_plan_type"
                         variant="outline"
                         class="text-[9px] px-1 py-0 h-4 shrink-0"
@@ -794,14 +786,6 @@
                       {{ getKeyOAuthExpires(key)?.text }}
                     </span>
                   </template>
-                  <Badge
-                    v-if="getAccountAlertLabel(key)"
-                    variant="destructive"
-                    class="text-[9px] px-1 py-0 h-4 shrink-0"
-                    :title="getAccountAlertTitle(key)"
-                  >
-                    {{ getAccountAlertLabel(key) }}
-                  </Badge>
                   <Badge
                     v-if="key.oauth_plan_type"
                     variant="outline"
