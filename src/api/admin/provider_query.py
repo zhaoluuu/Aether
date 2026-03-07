@@ -1956,11 +1956,14 @@ async def test_model_failover(
     - direct: 直接测试 provider_model_name，在当前 Provider 内多 Key 故障转移
     """
     from src.core.exceptions import ProviderNotAvailableException
+    from src.services.candidate.failover import FailoverEngine
+    from src.services.candidate.policy import RetryMode, RetryPolicy, SkipPolicy
     from src.services.candidate.recorder import CandidateRecorder
     from src.services.scheduling.candidate_builder import CandidateBuilder
     from src.services.scheduling.candidate_sorter import CandidateSorter
     from src.services.scheduling.scheduling_config import SchedulingConfig
     from src.services.task import TaskService
+    from src.services.task.core.protocol import AttemptKind, AttemptResult
 
     provider = (
         db.query(Provider)

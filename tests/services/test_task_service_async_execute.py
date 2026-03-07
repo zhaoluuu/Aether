@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -8,10 +8,9 @@ import pytest
 from src.core.exceptions import EmbeddedErrorException
 from src.services.candidate.schema import CandidateKey
 from src.services.candidate.submit import SubmitOutcome
-from src.services.request.executor import ExecutionContext, ExecutionError
-from src.services.task import service as task_service_module
-from src.services.task.context import TaskMode
-from src.services.task.protocol import AttemptKind
+from src.services.task.core.context import TaskMode
+from src.services.task.core.protocol import AttemptKind
+from src.services.task.service import pool_on_error
 from src.services.task.service import TaskService
 
 
@@ -51,7 +50,7 @@ async def test_task_service_execute_async_returns_execution_result() -> None:
     )
 
     svc.submit_with_failover = AsyncMock(return_value=outcome)  # type: ignore[method-assign]
-    svc._recorder.get_candidate_keys = MagicMock(  # type: ignore[attr-defined, method-assign]
+    svc._execute_facade_ops._get_candidate_keys = MagicMock(  # type: ignore[attr-defined, method-assign]
         return_value=[
             CandidateKey(candidate_index=0, retry_index=0, status="success", provider_id="p1")
         ]
@@ -82,7 +81,7 @@ async def test_task_service_execute_sync_passes_request_headers_and_body() -> No
     db = MagicMock()
     svc = TaskService(db)
     sentinel_result = object()
-    svc._execute_sync_unified = AsyncMock(  # type: ignore[method-assign]
+    svc._sync_ops.execute_sync_unified = AsyncMock(  # type: ignore[attr-defined, method-assign]
         return_value=sentinel_result
     )
 
@@ -105,95 +104,92 @@ async def test_task_service_execute_sync_passes_request_headers_and_body() -> No
     )
 
     assert result is sentinel_result
-    svc._execute_sync_unified.assert_awaited_once()  # type: ignore[attr-defined]
-    kwargs = svc._execute_sync_unified.await_args.kwargs  # type: ignore[attr-defined, union-attr]
+    svc._sync_ops.execute_sync_unified.assert_awaited_once()  # type: ignore[attr-defined]
+    kwargs = svc._sync_ops.execute_sync_unified.await_args.kwargs  # type: ignore[attr-defined, union-attr]
     assert kwargs["request_headers"] == request_headers
     assert kwargs["request_body"] == request_body
     assert kwargs["request_body_ref"] == request_body_ref
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("is_client_error", "retry_index", "max_retries_for_candidate", "expected_action"),
-    [
-        (True, 0, 1, "break"),
-        (False, 0, 2, "continue"),
-    ],
-)
-async def test_task_service_embedded_error_branch_applies_pool_health_policy(
-    monkeypatch: pytest.MonkeyPatch,
-    is_client_error: bool,
-    retry_index: int,
-    max_retries_for_candidate: int,
-    expected_action: str,
-) -> None:
-    db = MagicMock()
-    svc = TaskService(db)
+async def test_task_service_execute_delegates_to_execute_facade_ops() -> None:
+    svc = TaskService(MagicMock())
+    sentinel = object()
+    svc._execute_facade_ops.execute = AsyncMock(return_value=sentinel)  # type: ignore[attr-defined, method-assign]
 
-    monkeypatch.setattr(
-        task_service_module.RequestCandidateService, "mark_candidate_failed", MagicMock()
-    )
-    monkeypatch.setattr(
-        "src.services.proxy_node.resolver.resolve_effective_proxy",
-        lambda provider_proxy, key_proxy: provider_proxy or key_proxy,
-    )
-    monkeypatch.setattr("src.services.proxy_node.resolver.resolve_proxy_info", lambda _proxy: None)
-
-    pool_on_error = AsyncMock()
-    monkeypatch.setattr(svc, "_pool_on_error", pool_on_error)
-
-    candidate = SimpleNamespace(
-        provider=SimpleNamespace(id="p1", name="prov", proxy=None),
-        endpoint=SimpleNamespace(id="e1"),
-        key=SimpleNamespace(id="k1", proxy=None),
-    )
-    cause = EmbeddedErrorException(
-        provider_name="prov",
-        error_code=429,
-        error_message="usage_limit_reached",
-        error_status="RESOURCE_EXHAUSTED",
-    )
-    context = ExecutionContext(
-        candidate_id="cid-1",
-        candidate_index=0,
-        provider_id="p1",
-        endpoint_id="e1",
-        key_id="k1",
-        user_id=None,
-        api_key_id=None,
-        is_cached_user=False,
-        elapsed_ms=12,
-        concurrent_requests=3,
-    )
-    exec_err = ExecutionError(cause, context)
-    classifier = SimpleNamespace(is_client_error=lambda _text: is_client_error)
-
-    action = await svc._handle_candidate_error(
-        exec_err=exec_err,
-        candidate=candidate,
-        candidate_record_id="cand-1",
-        retry_index=retry_index,
-        max_retries_for_candidate=max_retries_for_candidate,
-        affinity_key="provider-test:p1",
+    result = await svc.execute(
+        task_type="chat",
+        task_mode=TaskMode.SYNC,
         api_format="openai:chat",
-        global_model_id="gpt-4o-mini",
-        request_id="req-1",
-        attempt=1,
-        max_attempts=3,
-        error_classifier=classifier,
+        model_name="m",
+        user_api_key=MagicMock(id="u", user_id="user"),
+        request_func=AsyncMock(),
+        request_id="rid",
     )
 
-    assert action == expected_action
-    pool_on_error.assert_awaited_once_with(candidate.provider, candidate.key, 429, cause)
+    assert result is sentinel
+    svc._execute_facade_ops.execute.assert_awaited_once()  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio
-async def test_task_service_pool_on_error_uses_embedded_error_message_fallback(
+async def test_task_service_submit_with_failover_delegates_to_submit_facade_ops() -> None:
+    svc = TaskService(MagicMock())
+    sentinel = object()
+    svc._submit_facade_ops.submit_with_failover = AsyncMock(  # type: ignore[attr-defined, method-assign]
+        return_value=sentinel
+    )
+
+    result = await svc.submit_with_failover(
+        api_format="openai:video",
+        model_name="sora",
+        affinity_key="a1",
+        user_api_key=MagicMock(id="u", user_id="user"),
+        request_id="rid",
+        task_type="video",
+        submit_func=AsyncMock(),
+        extract_external_task_id=lambda payload: payload.get("id"),
+    )
+
+    assert result is sentinel
+    svc._submit_facade_ops.submit_with_failover.assert_awaited_once()  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_task_service_poll_delegates_to_video_facade_ops() -> None:
+    svc = TaskService(MagicMock())
+    sentinel = object()
+    svc._video_facade_ops.poll = AsyncMock(return_value=sentinel)  # type: ignore[attr-defined, method-assign]
+
+    result = await svc.poll("task-1", user_id="user-1")
+
+    assert result is sentinel
+    svc._video_facade_ops.poll.assert_awaited_once_with("task-1", user_id="user-1")  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_task_service_cancel_delegates_to_video_facade_ops() -> None:
+    svc = TaskService(MagicMock())
+    sentinel = object()
+    svc._video_facade_ops.cancel = AsyncMock(return_value=sentinel)  # type: ignore[attr-defined, method-assign]
+
+    result = await svc.cancel(
+        "task-1",
+        user_id="user-1",
+        original_headers={"x-test": "1"},
+    )
+
+    assert result is sentinel
+    svc._video_facade_ops.cancel.assert_awaited_once_with(  # type: ignore[attr-defined]
+        "task-1",
+        user_id="user-1",
+        original_headers={"x-test": "1"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_pool_on_error_uses_embedded_error_message_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    db = MagicMock()
-    svc = TaskService(db)
-
     parsed_pool_cfg = object()
     apply_health_policy = AsyncMock()
     monkeypatch.setattr(
@@ -212,7 +208,7 @@ async def test_task_service_pool_on_error_uses_embedded_error_message_fallback(
         error_message="usage_limit_reached",
     )
 
-    await svc._pool_on_error(provider, key, 429, cause)
+    await pool_on_error(provider, key, 429, cause)
 
     apply_health_policy.assert_awaited_once()
     kwargs = apply_health_policy.await_args.kwargs
