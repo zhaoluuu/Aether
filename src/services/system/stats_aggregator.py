@@ -426,6 +426,7 @@ class StatsAggregatorService:
         stats = (
             db.query(
                 Usage.api_key_id,
+                func.max(Usage.api_key_name).label("api_key_name"),
                 func.count(Usage.id).label("total_requests"),
                 func.sum(case((error_cond, 1), else_=0)).label("error_requests"),
                 func.sum(Usage.input_tokens).label("input_tokens"),
@@ -459,6 +460,10 @@ class StatsAggregatorService:
                 record = StatsDailyApiKey(
                     id=str(uuid.uuid4()), date=day_start, api_key_id=stat.api_key_id
                 )
+
+            # 填充 api_key_name 快照（优先用已有值，新数据从 usage 聚合获取）
+            if not record.api_key_name and stat.api_key_name:
+                record.api_key_name = stat.api_key_name
 
             error_requests = int(stat.error_requests or 0)
             total_requests = int(stat.total_requests or 0)
@@ -598,6 +603,7 @@ class StatsAggregatorService:
                 func.sum(Usage.cache_creation_input_tokens).label("cache_creation_tokens"),
                 func.sum(Usage.cache_read_input_tokens).label("cache_read_tokens"),
                 func.sum(Usage.total_cost_usd).label("total_cost"),
+                func.max(Usage.username).label("username"),
             )
             .filter(
                 and_(
@@ -608,6 +614,12 @@ class StatsAggregatorService:
             )
             .first()
         )
+
+        # 填充 username 快照：从 Usage 聚合获取，用户删除后仍可追溯
+        if not stats.username:
+            username = getattr(aggregated, "username", None)
+            if username:
+                stats.username = username
 
         total_requests = int(getattr(aggregated, "total_requests", 0) or 0)
         if total_requests == 0:

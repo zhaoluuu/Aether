@@ -23,6 +23,7 @@ from src.database import get_db
 from src.models.api import CreateApiKeyRequest
 from src.models.database import ApiKey, Wallet
 from src.services.user.apikey import ApiKeyService
+from src.services.user.bulk_cleanup import pre_clean_api_key
 from src.services.wallet import WalletService
 
 # 应用时区配置，默认为 Asia/Shanghai
@@ -349,10 +350,7 @@ class AdminCreateStandaloneKeyAdapter(AdminApiAdapter):
         db = context.db
 
         # 独立Key支持无限制额度（initial_balance_usd = null）
-        if (
-            self.key_data.initial_balance_usd is not None
-            and self.key_data.initial_balance_usd <= 0
-        ):
+        if self.key_data.initial_balance_usd is not None and self.key_data.initial_balance_usd <= 0:
             raise HTTPException(
                 status_code=400,
                 detail="创建独立余额Key时，初始余额必须大于 0（或设置为 null 表示无限制）",
@@ -568,6 +566,7 @@ class AdminDeleteApiKeyAdapter(AdminApiAdapter):
             raise InvalidRequestException("仅支持删除独立密钥")
 
         user = api_key.user
+        pre_clean_api_key(db, api_key.id)
         db.delete(api_key)
         db.commit()
 

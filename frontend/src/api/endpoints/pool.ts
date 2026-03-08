@@ -2,6 +2,8 @@ import client from '../client'
 import { dedupedRequest } from '@/utils/cache'
 import type { AllowedModels, ProxyConfig } from './types/provider'
 
+const POOL_BATCH_ACTION_TIMEOUT_MS = 5 * 60 * 1000
+
 export interface PoolKeyStatus {
   key_id: string
   key_name: string
@@ -212,13 +214,21 @@ export async function batchActionPoolKeys(
   providerId: string,
   body: PoolBatchAction,
 ): Promise<{ affected: number; message: string }> {
-  const response = await client.post(`/api/admin/pool/${providerId}/keys/batch-action`, body)
+  const response = await client.post(
+    `/api/admin/pool/${providerId}/keys/batch-action`,
+    body,
+    { timeout: POOL_BATCH_ACTION_TIMEOUT_MS },
+  )
   return response.data
 }
 
 export async function cleanupBannedPoolKeys(
   providerId: string,
 ): Promise<{ affected: number; message: string }> {
-  const response = await client.post(`/api/admin/pool/${providerId}/keys/cleanup-banned`)
+  const response = await client.post(
+    `/api/admin/pool/${providerId}/keys/cleanup-banned`,
+    undefined,
+    { timeout: POOL_BATCH_ACTION_TIMEOUT_MS },
+  )
   return response.data
 }

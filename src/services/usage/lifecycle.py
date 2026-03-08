@@ -65,6 +65,8 @@ class UsageLifecycleMixin:
         usage = Usage(
             user_id=user.id if user else None,
             api_key_id=api_key.id if api_key else None,
+            username=user.username if user else None,
+            api_key_name=api_key.name if api_key else None,
             request_id=request_id,
             provider_name="pending",  # 尚未确定 provider
             model=model,

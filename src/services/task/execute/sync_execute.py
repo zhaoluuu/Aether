@@ -128,10 +128,13 @@ class SyncTaskExecutionService:
         affinity_key = str(user_api_key.id)
         user_id = str(user_api_key.user_id)
         api_format_norm = normalize_endpoint_signature(api_format)
+        username_snapshot = None
+        api_key_name_snapshot = getattr(user_api_key, "name", None)
 
         # Keep pending usage creation behavior consistent with previous behavior
         try:
             user = self.db.query(User).filter(User.id == user_api_key.user_id).first()
+            username_snapshot = getattr(user, "username", None) if user else None
             UsageService.create_pending_usage(
                 db=self.db,
                 request_id=request_id,
@@ -216,6 +219,8 @@ class SyncTaskExecutionService:
                     retry_index=retry_index,
                     user_id=user_id,
                     api_key_id=str(user_api_key.id),
+                    username=username_snapshot,
+                    api_key_name=api_key_name_snapshot,
                     provider_id=str(candidate.provider.id),
                     endpoint_id=str(candidate.endpoint.id),
                     key_id=str(candidate.key.id),
@@ -253,7 +258,14 @@ class SyncTaskExecutionService:
                 max_attempts=max_attempts_local,
                 is_stream=is_stream,
             )
-            _ = (attempt_id, _provider_name, _provider_id, _endpoint_id, _key_id, _first_byte_time_ms)
+            _ = (
+                attempt_id,
+                _provider_name,
+                _provider_id,
+                _endpoint_id,
+                _key_id,
+                _first_byte_time_ms,
+            )
 
             # Account Pool: on success, update sticky binding + LRU.
             await self._pool_ops.pool_on_success(candidate, request_body)
@@ -335,6 +347,8 @@ class SyncTaskExecutionService:
             request_id=request_id,
             user_id=user_id,
             api_key_id=str(user_api_key.id),
+            username=username_snapshot,
+            api_key_name=api_key_name_snapshot,
             candidate_record_map=candidate_record_map,
             max_attempts=max_attempts,
             execution_error_handler=_handle_exec_err,

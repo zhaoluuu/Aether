@@ -46,6 +46,7 @@ from src.models.database import (
 from src.services.system.time_range import TimeRangeParams
 from src.services.usage.service import UsageService
 from src.services.user.apikey import ApiKeyService
+from src.services.user.bulk_cleanup import pre_clean_api_key
 from src.services.user.preference import PreferenceService
 from src.services.wallet import WalletService
 from src.utils.cache_decorator import cache_result
@@ -731,6 +732,7 @@ class DeleteMyApiKeyAdapter(AuthenticatedApiAdapter):
             raise NotFoundException("API密钥不存在", "api_key")
         if api_key.is_locked:
             raise ForbiddenException("该密钥已被管理员锁定，无法删除")
+        pre_clean_api_key(context.db, api_key.id)
         context.db.delete(api_key)
         context.db.commit()
         return {"message": "API密钥已删除"}

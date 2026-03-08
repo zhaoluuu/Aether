@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from src.core.crypto import crypto_service
 from src.core.logger import logger
 from src.models.database import ApiKey, Usage
+from src.services.user.bulk_cleanup import pre_clean_api_key
 
 
 class ApiKeyService:
@@ -82,8 +83,7 @@ class ApiKeyService:
         db.refresh(api_key)
 
         logger.info(
-            f"创建API密钥: 用户ID {user_id}, 密钥名 {api_key.name}, "
-            f"独立Key={is_standalone}"
+            f"创建API密钥: 用户ID {user_id}, 密钥名 {api_key.name}, " f"独立Key={is_standalone}"
         )
         return api_key, key  # 返回密钥对象和明文密钥
 
@@ -245,7 +245,8 @@ class ApiKeyService:
             )
 
             if should_delete:
-                # 物理删除（Usage记录会保留，因为是 SET NULL）
+                # 物理删除（Usage / RequestCandidate / VideoTask 等记录保留）
+                pre_clean_api_key(db, api_key.id)
                 db.delete(api_key)
                 logger.info(
                     f"删除过期API密钥: ID {api_key.id}, 名称 {api_key.name}, "

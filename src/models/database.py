@@ -32,7 +32,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import backref, declarative_base, relationship
 
 from ..config import config
 from ..core.enums import AuthSource, ProviderBillingType, UserRole
@@ -235,7 +235,7 @@ class ApiKey(Base):
 
     # 关系
     user = relationship("User", back_populates="api_keys")
-    usage_records = relationship("Usage", back_populates="api_key")
+    usage_records = relationship("Usage", back_populates="api_key", passive_deletes=True)
     wallet = relationship("Wallet", back_populates="api_key", uselist=False, passive_deletes=True)
     provider_mappings = relationship(
         "ApiKeyProviderMapping", back_populates="api_key", cascade="all, delete-orphan"
@@ -324,6 +324,10 @@ class Usage(Base):
     wallet_id = Column(
         String(36), ForeignKey("wallets.id", ondelete="SET NULL"), nullable=True, index=True
     )
+
+    # 归属快照（删除用户/Key 后仍可追溯）
+    username = Column(String(100), nullable=True, comment="用户名快照")
+    api_key_name = Column(String(200), nullable=True, comment="API Key 名称快照")
 
     # 请求信息
     request_id = Column(String(100), unique=True, index=True, nullable=False)
@@ -1932,8 +1936,14 @@ class VideoTask(Base):
     external_task_id = Column(String(200))
 
     # 关联
-    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
-    api_key_id = Column(String(36), ForeignKey("api_keys.id"), index=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    api_key_id = Column(
+        String(36), ForeignKey("api_keys.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    # 归属快照（删除用户/Key 后仍可追溯）
+    username = Column(String(100), nullable=True, comment="用户名快照")
+    api_key_name = Column(String(200), nullable=True, comment="API Key 名称快照")
     provider_id = Column(String(36), ForeignKey("providers.id"), index=True)
     endpoint_id = Column(String(36), ForeignKey("provider_endpoints.id"), index=True)
     key_id = Column(String(36), ForeignKey("provider_api_keys.id"), index=True)
@@ -2013,7 +2023,7 @@ class VideoTask(Base):
     )
 
     # 关系
-    user = relationship("User", backref="video_tasks")
+    user = relationship("User", backref=backref("video_tasks", passive_deletes=True))
     remixed_from = relationship("VideoTask", remote_side=[id], backref="remixes")
 
     # 复合索引和唯一约束
@@ -2395,11 +2405,15 @@ class RequestCandidate(Base):
     # 关联字段
     request_id = Column(String(100), nullable=False, index=True)
     user_id = Column(
-        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     api_key_id = Column(
-        String(36), ForeignKey("api_keys.id", ondelete="CASCADE"), nullable=True, index=True
+        String(36), ForeignKey("api_keys.id", ondelete="SET NULL"), nullable=True, index=True
     )
+
+    # 归属快照（删除用户/Key 后仍可追溯）
+    username = Column(String(100), nullable=True, comment="用户名快照")
+    api_key_name = Column(String(200), nullable=True, comment="API Key 名称快照")
 
     # 候选信息
     candidate_index = Column(Integer, nullable=False)  # 候选序号（从0开始）
@@ -2766,7 +2780,10 @@ class StatsDailyApiKey(Base):
     __tablename__ = "stats_daily_api_key"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    api_key_id = Column(String(36), ForeignKey("api_keys.id", ondelete="CASCADE"), nullable=False)
+    api_key_id = Column(String(36), ForeignKey("api_keys.id", ondelete="SET NULL"), nullable=True)
+    api_key_name = Column(
+        String(200), nullable=True, comment="API Key 名称快照（删除 Key 后仍可追溯）"
+    )
     date = Column(DateTime(timezone=True), nullable=False, index=True)
 
     total_requests = Column(Integer, default=0, nullable=False)
@@ -2887,7 +2904,8 @@ class StatsUserDaily(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # 用户关联
-    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    username = Column(String(100), nullable=True, comment="用户名快照（删除用户后仍可追溯）")
 
     # 统计日期 (UTC)
     date = Column(DateTime(timezone=True), nullable=False, index=True)

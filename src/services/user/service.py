@@ -15,6 +15,7 @@ from src.core.logger import logger
 from src.core.validators import EmailValidator, PasswordValidator, UsernameValidator
 from src.models.database import ApiKey, GlobalModel, Model, Provider, Usage, User, UserRole
 from src.services.cache.user_cache import UserCacheService
+from src.services.user.bulk_cleanup import batch_nullify_fk, pre_clean_api_key
 from src.utils.transaction_manager import retry_on_database_error, transactional
 
 
@@ -252,15 +253,15 @@ class UserService:
         return user
 
     @staticmethod
-    @transactional()
     def delete_user(db: Session, user_id: str) -> bool:
         """删除用户（硬删除）
 
         删除流程：
         1. 检查未完结账务，阻止删除
-        2. 手动删除 ORM cascade 冲突的子记录
-        3. 删除用户记录
-        4. 财务记录（Wallet/PaymentOrder/RefundRequest/WalletTransaction）和
+        2. 预清理 Usage / RequestCandidate 等大表外键
+        3. 手动删除 ORM cascade 冲突的子记录
+        4. 删除用户记录
+        5. 财务记录（Wallet/PaymentOrder/RefundRequest/WalletTransaction）和
            Usage 记录保留，外键 SET NULL，由自动清理策略统一回收
         """
         from src.models.database import (
@@ -268,6 +269,7 @@ class UserService:
             ApiKey,
             PaymentOrder,
             RefundRequest,
+            RequestCandidate,
             UserPreference,
             Wallet,
         )
@@ -312,28 +314,39 @@ class UserService:
             if pending_order_count > 0:
                 raise ValueError("用户存在未完结充值订单，禁止删除")
 
-        # 手动删除子记录，避免 SQLAlchemy 的 ORM cascade 与数据库 CASCADE 冲突
-        # （UserPreference/AnnouncementRead 的数据库外键是 ON DELETE CASCADE，
-        #  但 SQLAlchemy 会先尝试 UPDATE SET NULL 导致冲突）
-        db.query(UserPreference).filter(UserPreference.user_id == user_id).delete(
-            synchronize_session=False
-        )
-        db.query(AnnouncementRead).filter(AnnouncementRead.user_id == user_id).delete(
-            synchronize_session=False
-        )
+        api_key_ids = [
+            api_key_id
+            for (api_key_id,) in db.query(ApiKey.id).filter(ApiKey.user_id == user_id).all()
+        ]
+        api_key_count = len(api_key_ids)
 
-        # 财务记录（Wallet/WalletTransaction/PaymentOrder/RefundRequest/PaymentCallback）
-        # 和 Usage 记录全部保留，数据库外键 SET NULL 自动断开关联，
-        # 由自动清理策略统一回收。
+        # 注意：batch_nullify_fk 内部分批 commit，预清理部分不可回滚。
+        # 这是预期行为：SET NULL 是幂等操作，即使后续步骤失败，
+        # 已置空的外键不影响数据完整性，重新执行删除即可。
+        try:
+            for api_key_id in api_key_ids:
+                pre_clean_api_key(db, api_key_id)
 
-        api_key_count = int(
-            db.query(func.count(ApiKey.id)).filter(ApiKey.user_id == user_id).scalar() or 0
-        )
-        db.query(ApiKey).filter(ApiKey.user_id == user_id).delete(synchronize_session=False)
+            batch_nullify_fk(db, Usage, "user_id", user_id)
+            batch_nullify_fk(db, RequestCandidate, "user_id", user_id)
 
-        # 现在删除用户（Usage, AuditLog, RequestAttempt 会通过数据库 SET NULL 保留）
-        db.delete(user)
-        db.commit()  # 立即提交事务,释放数据库锁
+            db.query(UserPreference).filter(UserPreference.user_id == user_id).delete(
+                synchronize_session=False
+            )
+            db.query(AnnouncementRead).filter(AnnouncementRead.user_id == user_id).delete(
+                synchronize_session=False
+            )
+
+            # 财务记录（Wallet/WalletTransaction/PaymentOrder/RefundRequest/PaymentCallback）
+            # 和 Usage / RequestCandidate / VideoTask 记录全部保留，数据库外键 SET NULL 自动断开关联。
+            db.query(ApiKey).filter(ApiKey.user_id == user_id).delete(synchronize_session=False)
+
+            # 现在删除用户（Usage, AuditLog, RequestAttempt 等会通过数据库 SET NULL 保留）
+            db.delete(user)
+            db.commit()  # 立即提交事务,释放数据库锁
+        except Exception:
+            db.rollback()
+            raise
 
         # 清除用户缓存
         asyncio.create_task(UserCacheService.invalidate_user_cache(user_id, email))

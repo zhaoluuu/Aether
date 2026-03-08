@@ -21,6 +21,7 @@ from src.models.api import CreateApiKeyRequest, CreateUserRequest
 from src.models.database import ApiKey, User, UserRole
 from src.services.system.config import SystemConfigService
 from src.services.user.apikey import ApiKeyService
+from src.services.user.bulk_cleanup import pre_clean_api_key
 from src.services.user.service import UserService
 from src.services.wallet import WalletService
 from src.utils.cache_decorator import cache_result
@@ -584,6 +585,7 @@ class AdminDeleteUserKeyAdapter(AdminApiAdapter):
         if not api_key:
             raise NotFoundException("API Key不存在或不属于该用户", "api_key")
 
+        pre_clean_api_key(db, api_key.id)
         db.delete(api_key)
         db.commit()
 

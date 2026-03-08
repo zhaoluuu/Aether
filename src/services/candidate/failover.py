@@ -332,6 +332,8 @@ class FailoverEngine:
         request_id: str | None = None,
         user_id: str | None = None,
         api_key_id: str | None = None,
+        username: str | None = None,
+        api_key_name: str | None = None,
         candidate_record_map: dict[tuple[int, int], str] | None = None,
         max_candidates: int | None = None,
         max_attempts: int | None = None,
@@ -405,6 +407,8 @@ class FailoverEngine:
                             candidate_index=candidate_index,
                             user_id=user_id,
                             api_key_id=api_key_id,
+                            username=username,
+                            api_key_name=api_key_name,
                             skip_reason=skip_reason,
                         )
                 candidate_keys_fallback.append(
@@ -428,6 +432,8 @@ class FailoverEngine:
                         request_id=request_id,
                         user_id=user_id,
                         api_key_id=api_key_id,
+                        username=username,
+                        api_key_name=api_key_name,
                         candidate_record_map=candidate_record_map,
                         candidate_keys_fallback=candidate_keys_fallback,
                         candidates=candidates,
@@ -476,6 +482,8 @@ class FailoverEngine:
                         retry_index=retry_index,
                         user_id=user_id,
                         api_key_id=api_key_id,
+                        username=username,
+                        api_key_name=api_key_name,
                     )
 
                 self._attach_attempt_context(
@@ -620,6 +628,8 @@ class FailoverEngine:
         request_id: str | None,
         user_id: str | None,
         api_key_id: str | None,
+        username: str | None,
+        api_key_name: str | None,
         candidate_record_map: dict[tuple[int, int], str] | None,
         candidate_keys_fallback: list[CandidateKey],
         candidates: list[ProviderCandidate],
@@ -677,6 +687,8 @@ class FailoverEngine:
                         retry_index=base_retry_index,
                         user_id=user_id,
                         api_key_id=api_key_id,
+                        username=username,
+                        api_key_name=api_key_name,
                         skip_reason=skip_reason,
                     )
                 candidate_keys_fallback.append(
@@ -724,6 +736,8 @@ class FailoverEngine:
                         retry_index=composite_retry_index,
                         user_id=user_id,
                         api_key_id=api_key_id,
+                        username=username,
+                        api_key_name=api_key_name,
                     )
 
                 self._attach_attempt_context(
@@ -1202,6 +1216,8 @@ class FailoverEngine:
         retry_index: int,
         user_id: str | None,
         api_key_id: str | None,
+        username: str | None,
+        api_key_name: str | None,
     ) -> str:
         # Create "available" record, then caller will mark pending.
         extra = self._build_pool_extra_data(candidate)
@@ -1212,6 +1228,8 @@ class FailoverEngine:
             retry_index=retry_index,
             user_id=user_id,
             api_key_id=api_key_id,
+            username=username,
+            api_key_name=api_key_name,
             provider_id=str(candidate.provider.id),
             endpoint_id=str(candidate.endpoint.id),
             key_id=str(candidate.key.id),
@@ -1230,6 +1248,8 @@ class FailoverEngine:
         retry_index: int = 0,
         user_id: str | None,
         api_key_id: str | None,
+        username: str | None,
+        api_key_name: str | None,
         skip_reason: str | None,
     ) -> str:
         extra = self._build_pool_extra_data(candidate)
@@ -1240,6 +1260,8 @@ class FailoverEngine:
             retry_index=retry_index,
             user_id=user_id,
             api_key_id=api_key_id,
+            username=username,
+            api_key_name=api_key_name,
             provider_id=str(candidate.provider.id),
             endpoint_id=str(candidate.endpoint.id),
             key_id=str(candidate.key.id),

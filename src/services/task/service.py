@@ -363,6 +363,9 @@ class TaskService:
         elif user_api_key is not None and getattr(user_api_key, "user_id", None):
             user_id = str(user_api_key.user_id)
 
+        username_snapshot = getattr(resolved_user, "username", None) if resolved_user else None
+        api_key_name_snapshot = getattr(user_api_key, "name", None) if user_api_key else None
+
         resolved_affinity_key = affinity_key
         if not resolved_affinity_key:
             api_key_id = getattr(user_api_key, "id", None) if user_api_key is not None else None
@@ -443,6 +446,8 @@ class TaskService:
                     retry_index=retry_index,
                     user_id=user_id,
                     api_key_id=(getattr(user_api_key, "id", None) if user_api_key else None),
+                    username=username_snapshot,
+                    api_key_name=api_key_name_snapshot,
                     provider_id=str(candidate.provider.id),
                     endpoint_id=str(candidate.endpoint.id),
                     key_id=str(candidate.key.id),
@@ -564,6 +569,8 @@ class TaskService:
             api_key_id=(
                 str(user_api_key.id) if user_api_key and getattr(user_api_key, "id", None) else None
             ),
+            username=username_snapshot,
+            api_key_name=api_key_name_snapshot,
             candidate_record_map=candidate_record_map,
             max_attempts=max_attempts,
             execution_error_handler=_handle_exec_err,
@@ -604,7 +611,6 @@ class TaskService:
             api_format_norm,
             execution_state.last_error,
         )
-
 
     async def submit_with_failover(
         self,

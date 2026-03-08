@@ -634,6 +634,8 @@ class GeminiVeoHandler(VideoHandlerBase):
             external_task_id=external_task_id,
             user_id=self.user.id,
             api_key_id=self.api_key.id,
+            username=self.user.username,
+            api_key_name=self.api_key.name,
             provider_id=candidate.provider.id,
             endpoint_id=candidate.endpoint.id,
             key_id=candidate.key.id,

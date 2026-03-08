@@ -23,6 +23,8 @@ class RequestCandidateService:
         retry_index: int = 0,  # 新增：重试序号
         user_id: str | None = None,
         api_key_id: str | None = None,
+        username: str | None = None,
+        api_key_name: str | None = None,
         provider_id: str | None = None,
         endpoint_id: str | None = None,
         key_id: str | None = None,
@@ -42,6 +44,8 @@ class RequestCandidateService:
             retry_index: 重试序号（从0开始）
             user_id: 用户ID
             api_key_id: API Key ID
+            username: 用户名快照
+            api_key_name: API Key 名称快照
             provider_id: Provider ID
             endpoint_id: Endpoint ID
             key_id: API Key ID
@@ -58,6 +62,8 @@ class RequestCandidateService:
             retry_index=retry_index,  # 新增
             user_id=user_id,
             api_key_id=api_key_id,
+            username=username,
+            api_key_name=api_key_name,
             provider_id=provider_id,
             endpoint_id=endpoint_id,
             key_id=key_id,
