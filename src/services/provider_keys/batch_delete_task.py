@@ -10,6 +10,7 @@ import asyncio
 import json
 import uuid
 from collections.abc import Callable
+from concurrent.futures import Future
 
 import redis.asyncio as aioredis
 from sqlalchemy import delete as sa_delete
@@ -232,17 +233,32 @@ async def _run_batch_delete(
 
     # 从工作线程安全地触发 Redis 进度更新
     loop = asyncio.get_running_loop()
+    progress_futures: list[Future[object]] = []
 
     def on_progress(current: int) -> None:
         try:
-            asyncio.run_coroutine_threadsafe(
+            future = asyncio.run_coroutine_threadsafe(
                 _update_task_field(task_id, r=r, deleted=current), loop
             )
+            progress_futures.append(future)
         except RuntimeError:
             pass
 
     try:
         affected = await asyncio.to_thread(_sync_delete, provider_id, key_ids, on_progress)
+
+        if progress_futures:
+            results = await asyncio.gather(
+                *(asyncio.wrap_future(f) for f in progress_futures),
+                return_exceptions=True,
+            )
+            for exc in results:
+                if isinstance(exc, Exception):
+                    logger.debug(
+                        "[BATCH_DELETE_TASK] progress update failed task={}: {}",
+                        task_id,
+                        exc,
+                    )
 
         # 副作用（缓存失效等）是异步操作，在事件循环中执行
         if affected > 0:
