@@ -247,13 +247,14 @@ class UsageActiveRequestsMixin:
         default_timeout_seconds: int = 300,
         *,
         include_admin_fields: bool = False,
+        maintain_status: bool | None = None,
     ) -> list[dict[str, Any]]:
         """
-        获取活跃请求状态（用于前端轮询），并自动清理超时的 pending/streaming 请求
+        获取活跃请求状态（用于前端轮询）。
 
         与 get_active_requests 不同，此方法：
         1. 返回轻量级的状态字典而非完整 Usage 对象
-        2. 自动检测并清理超时的 pending/streaming 请求
+        2. 可选地检测并清理超时的 pending/streaming 请求
         3. 支持按 ID 列表查询特定请求
 
         Args:
@@ -261,6 +262,7 @@ class UsageActiveRequestsMixin:
             ids: 指定要查询的请求 ID 列表（可选）
             user_id: 限制只查询该用户的请求（可选，用于普通用户接口）
             default_timeout_seconds: 默认超时时间（秒），当端点未配置时使用
+            maintain_status: 是否执行超时修复与状态回写；默认仅在全量活跃请求查询时执行
 
         Returns:
             请求状态列表
@@ -311,28 +313,26 @@ class UsageActiveRequestsMixin:
             query = query.order_by(Usage.created_at.desc()).limit(50)
 
         records = query.all()
+        should_maintain_status = maintain_status if maintain_status is not None else not ids
 
         # 检查超时的 pending/streaming 请求
         # 收集可能超时的 usage_id 列表
         timeout_candidates: list[str] = []
-        for r in records:
-            if r.status in ("pending", "streaming") and r.created_at:
-                # 使用全局配置的超时时间
-                timeout_seconds = default_timeout_seconds
+        if should_maintain_status:
+            for r in records:
+                if r.status in ("pending", "streaming") and r.created_at:
+                    timeout_seconds = default_timeout_seconds
 
-                # 处理时区：如果 created_at 没有时区信息，假定为 UTC
-                created_at = r.created_at
-                if created_at.tzinfo is None:
-                    created_at = created_at.replace(tzinfo=timezone.utc)
-                elapsed = (now - created_at).total_seconds()
-                if elapsed > timeout_seconds:
-                    # 需要获取 request_id 以便检查 RequestCandidate 表
-                    # r.id 是 usage_id，需要查询 request_id
-                    timeout_candidates.append(r.id)
+                    created_at = r.created_at
+                    if created_at.tzinfo is None:
+                        created_at = created_at.replace(tzinfo=timezone.utc)
+                    elapsed = (now - created_at).total_seconds()
+                    if elapsed > timeout_seconds:
+                        timeout_candidates.append(r.id)
 
         # 批量更新超时的请求（排除已有成功完成记录的请求）
         timeout_ids = []
-        if timeout_candidates:
+        if should_maintain_status and timeout_candidates:
             # 先获取这些 Usage 的 request_id
             usage_request_ids = (
                 db.query(Usage.id, Usage.request_id).filter(Usage.id.in_(timeout_candidates)).all()
@@ -374,7 +374,8 @@ class UsageActiveRequestsMixin:
                 cls._sync_candidate_status_to_success(db, completed_request_ids)
                 db.commit()
                 logger.info(
-                    f"[Usage] 恢复 {len(completed_usage_ids)} 个已完成请求的状态（遥测回调丢失）"
+                    "[Usage] 恢复 {} 个已完成请求的状态（遥测回调丢失）",
+                    len(completed_usage_ids),
                 )
 
         result: list[dict[str, Any]] = []
