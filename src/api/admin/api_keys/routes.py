@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from src.api.base.admin_adapter import AdminApiAdapter
 from src.api.base.context import ApiRequestContext
-from src.api.base.pipeline import ApiRequestPipeline
+from src.api.base.pipeline import get_pipeline
 from src.config import config
 from src.core.exceptions import InvalidRequestException, NotFoundException
 from src.core.logger import logger
@@ -67,7 +67,7 @@ def parse_expiry_date(date_str: str | None) -> datetime | None:
 
 
 router = APIRouter(prefix="/api/admin/api-keys", tags=["Admin - API Keys (Standalone)"])
-pipeline = ApiRequestPipeline()
+pipeline = get_pipeline()
 
 
 def _serialize_standalone_key_item(api_key: ApiKey) -> dict[str, Any]:

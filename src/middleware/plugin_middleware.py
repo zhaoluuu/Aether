@@ -41,9 +41,13 @@ class PluginMiddleware:
     - 纯 ASGI 可以直接透传流式响应，无额外开销
     """
 
+    _NOTIFICATION_CACHE_TTL = 30.0  # 通知模块开关缓存 TTL (秒)
+
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
         self.plugin_manager = get_plugin_manager()
+        self._notification_enabled_cache: bool | None = None
+        self._notification_cache_expires: float = 0.0
 
         # 从配置读取速率限制值
         self.llm_api_rate_limit = config.llm_api_rate_limit
@@ -52,6 +56,7 @@ class PluginMiddleware:
         # 完全跳过限流的路径（静态资源、文档等）
         self.skip_rate_limit_paths = [
             "/health",
+            "/readyz",
             "/docs",
             "/redoc",
             "/openapi.json",
@@ -465,6 +470,36 @@ class PluginMiddleware:
             except Exception as e:
                 logger.error(f"Monitor plugin failed: {e}")
 
+    async def _is_notification_email_module_enabled(self, request: Request) -> bool:
+        """检查通知邮件模块是否启用（带内存缓存，避免 5xx 雪崩时放大 DB 压力）。"""
+        now = time.time()
+        if self._notification_enabled_cache is not None and now < self._notification_cache_expires:
+            return self._notification_enabled_cache
+
+        from sqlalchemy.orm import Session
+
+        from src.database import create_session
+        from src.services.system.config import SystemConfigService
+
+        config_key = "module.notification_email.enabled"
+        try:
+            request_db = getattr(request.state, "db", None)
+            if isinstance(request_db, Session):
+                result = bool(SystemConfigService.get_config(request_db, config_key, default=False))
+            else:
+                db = create_session()
+                try:
+                    result = bool(SystemConfigService.get_config(db, config_key, default=False))
+                finally:
+                    db.close()
+        except Exception as e:
+            logger.warning("读取通知邮件模块开关失败: {}", e)
+            return False
+
+        self._notification_enabled_cache = result
+        self._notification_cache_expires = now + self._NOTIFICATION_CACHE_TTL
+        return result
+
     async def _call_error_plugins(
         self, request: Request, error: Exception, start_time: float
     ) -> None:
@@ -475,6 +510,9 @@ class PluginMiddleware:
 
         # 通知插件 - 发送严重错误通知
         if not isinstance(error, HTTPException) or error.status_code >= 500:
+            if not await self._is_notification_email_module_enabled(request):
+                return
+
             notification_plugin = self.plugin_manager.get_plugin("notification")
             if notification_plugin and notification_plugin.enabled:
                 try:

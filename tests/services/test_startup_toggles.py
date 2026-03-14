@@ -44,6 +44,13 @@ async def test_maintenance_scheduler_start_skips_startup_task_when_disabled(
     assert created is False
 
 
+def test_http_client_idle_cleanup_interval_env_invalid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HTTP_CLIENT_IDLE_CLEANUP_INTERVAL_MINUTES", "bad")
+    assert MaintenanceScheduler._get_http_client_idle_cleanup_interval_minutes() == 5
+
+
 @pytest.mark.asyncio
 async def test_candidate_cleanup_uses_dedicated_retention_and_batch_settings(
     monkeypatch: pytest.MonkeyPatch,
