@@ -796,6 +796,8 @@ class OpenAINormalizer(FormatNormalizer):
             tool_id = event.tool_id or ""
             tool_name = event.tool_name or ""
             tool_index = self._ensure_tool_call_index(ss, tool_id, event.block_index)
+            if tool_id:
+                ss.setdefault("block_to_tool_id", {})[int(event.block_index)] = str(tool_id)
             out.append(
                 base_chunk(
                     {
@@ -862,12 +864,22 @@ class OpenAINormalizer(FormatNormalizer):
             return out
 
         if isinstance(event, ToolCallDeltaEvent):
-            tool_index = self._ensure_tool_call_index(ss, event.tool_id, event.block_index)
-            # 后续 delta 只需 index + function.arguments；id/type 仅在 ContentBlockStartEvent 首次发送
+            tool_id = str(event.tool_id or "")
+            block_to_tool_id = ss.setdefault("block_to_tool_id", {})
+            if not tool_id:
+                tool_id = str(block_to_tool_id.get(int(event.block_index)) or "")
+            else:
+                block_to_tool_id[int(event.block_index)] = tool_id
+
+            tool_index = self._ensure_tool_call_index(ss, tool_id, event.block_index)
+            # 对严格客户端重复携带 id/type，避免它们把后续 delta 视为无效 tool_call。
             tc_delta: dict[str, Any] = {
                 "index": tool_index,
+                "type": "function",
                 "function": {"arguments": event.input_delta},
             }
+            if tool_id:
+                tc_delta["id"] = tool_id
             out.append(base_chunk({"tool_calls": [tc_delta]}))
             return out
 
