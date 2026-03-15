@@ -122,3 +122,102 @@ async def test_candidate_cleanup_uses_dedicated_retention_and_batch_settings(
     assert batch_one.committed is True
     assert batch_one.closed is True
     assert batch_two.closed is True
+
+
+def test_cleanup_body_fields_loads_ids_then_processes_records_individually(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scheduler = MaintenanceScheduler()
+
+    class _IdBatchSession:
+        def __init__(self, ids: list[str]) -> None:
+            self.ids = ids
+            self.closed = False
+            self.query_obj = MagicMock()
+            filtered = self.query_obj.filter.return_value
+            filtered.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [
+                SimpleNamespace(id=value) for value in ids
+            ]
+
+        def query(self, *args):  # type: ignore[no-untyped-def]
+            self.query_args = args
+            return self.query_obj
+
+        def rollback(self) -> None:
+            raise AssertionError("rollback should not be called")
+
+        def close(self) -> None:
+            self.closed = True
+
+    class _RecordSession:
+        def __init__(self, record: SimpleNamespace) -> None:
+            self.record = record
+            self.closed = False
+            self.committed = False
+            self.query_obj = MagicMock()
+            self.query_obj.filter.return_value.first.return_value = record
+
+        def query(self, *args):  # type: ignore[no-untyped-def]
+            self.query_args = args
+            return self.query_obj
+
+        def execute(self, _statement):  # type: ignore[no-untyped-def]
+            return SimpleNamespace(rowcount=1)
+
+        def commit(self) -> None:
+            self.committed = True
+
+        def rollback(self) -> None:
+            raise AssertionError("rollback should not be called")
+
+        def close(self) -> None:
+            self.closed = True
+
+    batch_one = _IdBatchSession(["usage-1", "usage-2"])
+    record_one = _RecordSession(
+        SimpleNamespace(
+            id="usage-1",
+            request_body={"hello": "world"},
+            response_body=None,
+            provider_request_body=None,
+            client_response_body=None,
+        )
+    )
+    record_two = _RecordSession(
+        SimpleNamespace(
+            id="usage-2",
+            request_body=None,
+            response_body={"ok": True},
+            provider_request_body=None,
+            client_response_body=None,
+        )
+    )
+    batch_two = _IdBatchSession([])
+    sessions = iter([batch_one, record_one, record_two, batch_two])
+
+    monkeypatch.setattr(
+        maintenance_scheduler_module,
+        "create_session",
+        lambda: next(sessions),
+    )
+    monkeypatch.setattr(
+        maintenance_scheduler_module,
+        "compress_json",
+        lambda payload: f"compressed:{payload}".encode(),
+    )
+
+    compressed = scheduler._cleanup_body_fields(
+        cutoff_time=SimpleNamespace(),  # type: ignore[arg-type]
+        batch_size=1000,
+    )
+
+    assert compressed == 2
+    assert batch_one.query_args == (maintenance_scheduler_module.Usage.id,)
+    assert len(record_one.query_args) == 5
+    assert len(record_two.query_args) == 5
+    assert batch_one.closed is True
+    assert batch_two.closed is True
+    assert record_one.committed is True
+    assert record_two.committed is True
+    assert record_one.closed is True
+    assert record_two.closed is True
