@@ -785,7 +785,7 @@ class ChatHandlerBase(BaseMessageHandler, ABC):
         else:
             # 同格式：按原逻辑做轻量清理（子类可覆盖以移除不需要的字段）
             request_body = self.prepare_provider_request_body(request_body)
-            # 同格式时也需要应用 target_variant 转换（如 Codex）
+            # 同格式 Provider 仍可能声明 target_variant
             if same_format_variant:
                 request_body = registry.convert_request(
                     request_body,

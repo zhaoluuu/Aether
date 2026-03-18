@@ -51,7 +51,6 @@ class _DummyCliStreamHandler(CliStreamMixin):
         return out
 
     def prepare_provider_request_body(self, request_body: dict[str, Any]) -> dict[str, Any]:
-        request_body.pop("_aether_compact", None)
         request_body["input"][0]["content"][0]["text"] = "prepared"
         return request_body
 
@@ -116,7 +115,6 @@ async def test_execute_stream_request_does_not_mutate_original_request_body(
 
     original_request_body = {
         "model": "gpt-test",
-        "_aether_compact": True,
         "input": [
             {
                 "role": "user",
@@ -141,6 +139,5 @@ async def test_execute_stream_request_does_not_mutate_original_request_body(
 
     assert original_request_body == snapshot
     assert handler._request_builder.request_body is not None
-    assert "_aether_compact" not in handler._request_builder.request_body
     assert handler._request_builder.request_body["input"][0]["content"][0]["text"] == "prepared"
     assert handler._request_builder.request_body["input"][0]["content"][-1]["text"] == "finalized"

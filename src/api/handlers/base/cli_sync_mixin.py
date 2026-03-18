@@ -196,7 +196,7 @@ class CliSyncMixin:
                 url_model = (
                     self.get_model_for_url(request_body, mapped_model) or mapped_model or model
                 )
-                # 同格式时也需要应用 target_variant 转换（如 Codex）
+                # 同格式 Provider 仍可能声明 target_variant
                 if target_variant and provider_api_format:
                     registry = get_format_converter_registry()
                     request_body = registry.convert_request(

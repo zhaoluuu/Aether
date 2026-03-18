@@ -146,13 +146,9 @@ class OpenAICliNormalizer(FormatNormalizer):
         request: dict[str, Any],
         variant: str,
     ) -> dict[str, Any] | None:
-        """Codex 同格式透传：做最小补丁并保持稳定的请求前缀顺序。"""
-        if variant.lower() != "codex":
-            return None
-        out: dict[str, Any] = dict(request)
-        # 内部路由标记：绝不能透传到上游。
-        out.pop("_aether_compact", None)
-        return reorder_openai_cli_request_prefix_keys(out)
+        """OpenAI CLI currently has no provider-specific same-format patching."""
+        del request, variant
+        return None
 
     def request_to_internal(self, request: dict[str, Any]) -> InternalRequest:
         model = str(request.get("model") or "")
@@ -268,7 +264,6 @@ class OpenAICliNormalizer(FormatNormalizer):
         openai_extra = internal.extra.get("openai", {})
         openai_cli_extra = internal.extra.get("openai_cli", {})
         request_flags = internal.extra.get("openai_cli_request_flags", {}) if internal.extra else {}
-        is_codex_variant = (target_variant or "").lower() == "codex"
         has_explicit_instructions = bool(
             isinstance(request_flags, dict) and request_flags.get("has_instructions")
         )
@@ -413,9 +408,6 @@ class OpenAICliNormalizer(FormatNormalizer):
                     and key not in _HANDLED_KEYS
                 ):
                     result[key] = value
-
-        if is_codex_variant and "store" not in result:
-            result["store"] = False
 
         return self._reorder_request_prefix_keys(result)
 
