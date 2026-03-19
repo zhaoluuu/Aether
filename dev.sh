@@ -18,6 +18,10 @@ export HTTP_MAX_CONNECTIONS=${HTTP_MAX_CONNECTIONS:-20}
 export HTTP_KEEPALIVE_CONNECTIONS=${HTTP_KEEPALIVE_CONNECTIONS:-5}
 
 # 启动 uvicorn（热重载模式，只监视 src 目录）
+echo "=> 执行数据库迁移..."
+uv run alembic upgrade head
+
+echo ""
 echo "=> 启动本地开发服务器..."
 echo "=> 后端地址: http://localhost:8084"
 echo "=> 数据库: ${DATABASE_URL}"

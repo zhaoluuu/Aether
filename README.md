@@ -76,7 +76,7 @@ docker compose -f docker-compose.build.yml up -d postgres redis
 
 # 后端
 uv sync
-./dev.sh
+./dev.sh  # 自动执行 alembic upgrade head
 
 # 前端
 cd frontend && npm install && npm run dev
