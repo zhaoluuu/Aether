@@ -56,10 +56,9 @@
         </Card>
       </div>
 
-      <!-- TODO(wallet): 充值/退款用户主动操作入口暂未启用，待支付链路联调完成后再开放 -->
       <div
         v-if="ENABLE_WALLET_ACTION_FORMS"
-        class="grid grid-cols-1 xl:grid-cols-2 gap-4"
+        class="grid grid-cols-1 gap-4"
       >
         <Card class="p-5 space-y-4">
           <div class="flex items-center justify-between">
@@ -144,7 +143,8 @@
           </div>
         </Card>
 
-        <Card class="p-5 space-y-4">
+        <!-- TODO: 暂时屏蔽退款入口 -->
+        <Card v-if="false" class="p-5 space-y-4">
           <div class="flex items-center justify-between">
             <h3 class="text-base font-semibold">
               申请退款
@@ -594,8 +594,7 @@ import {
 
 const { success, error: showError } = useToast()
 
-// TODO(wallet): 充值和退款前台入口尚未正式启用；联调完成后改为 true 即可恢复显示。
-const ENABLE_WALLET_ACTION_FORMS = false
+const ENABLE_WALLET_ACTION_FORMS = true
 
 const loadingInitial = ref(true)
 const loadingTransactions = ref(false)
@@ -813,7 +812,7 @@ async function submitRefund() {
 
 function buildRefundIdempotencyKey(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID().replaceAll('-', '')
+    return crypto.randomUUID().replace(/-/g, '')
   }
   return `${Date.now()}_${Math.random().toString(16).slice(2, 10)}`
 }

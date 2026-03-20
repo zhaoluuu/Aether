@@ -138,6 +138,12 @@ class Config:
         # 支付回调安全配置（公开回调入口必须携带该共享密钥）
         self.payment_callback_secret = os.getenv("PAYMENT_CALLBACK_SECRET", "").strip()
 
+        # Alipay 配置
+        self.alipay_app_id = os.getenv("ALIPAY_APP_ID", "").strip()
+        self.alipay_private_key = os.getenv("ALIPAY_PRIVATE_KEY", "").strip()
+        self.alipay_public_key = os.getenv("ALIPAY_PUBLIC_KEY", "").strip()
+        self.alipay_debug = os.getenv("ALIPAY_DEBUG", "true").lower() == "true"
+
         self.public_api_rate_limit = int(os.getenv("PUBLIC_API_RATE_LIMIT", "60"))
 
         # 异常处理配置

@@ -230,3 +230,69 @@ async def test_admin_payment_credit_adapter_marks_manual_credit(
     assert gateway_response["manual_credit"] is True
     assert gateway_response["credited_by"] == "admin-1"
     db.commit.assert_called_once()
+
+def test_alipay_webhook_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    db = MagicMock()
+    client = _build_payment_app(db)
+    
+    monkeypatch.setattr("src.services.payment.gateway.alipay.AlipayGateway.verify_callback_payload", lambda *args, **kwargs: True)
+    
+    order = PaymentOrder(
+        id="po-123",
+        order_no="out_123",
+        amount_usd=Decimal("10.00"),
+    )
+    monkeypatch.setattr("src.services.payment.service.PaymentService.get_order", lambda *args, **kwargs: order)
+    
+    captured_kwargs = {}
+    def _fake_handle_callback(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+    monkeypatch.setattr("src.services.payment.service.PaymentService.handle_callback", _fake_handle_callback)
+    
+    form_data = {
+        "trade_status": "TRADE_SUCCESS",
+        "out_trade_no": "out_123",
+        "trade_no": "ali_trade_888",
+        "total_amount": "72.00",
+        "sign": "mock-sign",
+    }
+    
+    response = client.post(
+        "/api/payment/callback/alipay/webhook",
+        data=form_data,
+    )
+    
+    assert response.status_code == 200
+    assert response.text == "success"
+    assert captured_kwargs["pay_amount"] == 72.0
+    assert captured_kwargs["amount_usd"] == Decimal("10.00")
+    db.commit.assert_called_once()
+
+
+def test_alipay_webhook_invalid_signature(monkeypatch: pytest.MonkeyPatch) -> None:
+    db = MagicMock()
+    client = _build_payment_app(db)
+    monkeypatch.setattr("src.services.payment.gateway.alipay.AlipayGateway.verify_callback_payload", lambda *args, **kwargs: False)
+    
+    response = client.post(
+        "/api/payment/callback/alipay/webhook",
+        data={"trade_status": "TRADE_SUCCESS", "out_trade_no": "out_123"},
+    )
+    assert response.status_code == 200
+    assert response.text == "failure"
+    db.commit.assert_not_called()
+
+
+def test_alipay_webhook_amount_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    db = MagicMock()
+    client = _build_payment_app(db)
+    monkeypatch.setattr("src.services.payment.gateway.alipay.AlipayGateway.verify_callback_payload", lambda *args, **kwargs: True)
+    
+    order = PaymentOrder(id="po-123", order_no="out_123", amount_usd=Decimal("10.00"))
+    monkeypatch.setattr("src.services.payment.service.PaymentService.get_order", lambda *args, **kwargs: order)
+    
+    response = client.post("/api/payment/callback/alipay/webhook", data={"trade_status": "TRADE_SUCCESS", "out_trade_no": "out_123", "total_amount": "70.00"})
+    
+    assert response.status_code == 200
+    assert response.text == "failure"
+    db.commit.assert_not_called()
