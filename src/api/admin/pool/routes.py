@@ -9,11 +9,10 @@ Provides endpoints for managing account pools at scale:
 from __future__ import annotations
 
 import asyncio
-import json
 import re
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, cast
 
@@ -35,7 +34,9 @@ from src.models.database import Provider, ProviderAPIKey
 from src.services.billing.precision import to_money_decimal
 from src.services.provider.fingerprint import generate_fingerprint
 from src.services.provider.pool import redis_ops as pool_redis
-from src.services.provider.pool.account_state import resolve_pool_account_state
+from src.services.provider.pool.account_state import (
+    resolve_pool_account_state,
+)
 from src.services.provider.pool.config import parse_pool_config
 from src.services.provider.pool.dimensions import get_preset_dimension_metas
 from src.services.provider.pool.scheduling_dimensions import (
@@ -45,6 +46,18 @@ from src.services.provider.pool.scheduling_dimensions import (
 )
 from src.services.provider_keys.key_side_effects import cleanup_key_references
 from src.services.provider_keys.quota_reader import get_quota_reader
+from src.services.provider_keys.status_snapshot_store import (
+    derive_oauth_expires_at as derive_persisted_oauth_expires_at,
+)
+from src.services.provider_keys.status_snapshot_store import (
+    extract_oauth_auth_config as extract_persisted_oauth_auth_config,
+)
+from src.services.provider_keys.status_snapshot_store import (
+    normalize_oauth_expires_at as normalize_persisted_oauth_expires_at,
+)
+from src.services.provider_keys.status_snapshot_store import (
+    resolve_provider_key_status_snapshot,
+)
 
 from .schemas import (
     BatchActionRequest,
@@ -252,10 +265,6 @@ def _build_account_quota(provider_type: str, upstream_metadata: Any) -> str | No
     return get_quota_reader(provider_type, upstream_metadata).display_summary()
 
 
-def _extract_quota_updated_at(provider_type: str, upstream_metadata: Any) -> int | None:
-    return get_quota_reader(provider_type, upstream_metadata).updated_at()
-
-
 def _normalize_oauth_plan_type(plan_type: Any, provider_type: str) -> str | None:
     if not isinstance(plan_type, str):
         return None
@@ -273,52 +282,17 @@ def _normalize_oauth_plan_type(plan_type: Any, provider_type: str) -> str | None
 
 
 def _extract_oauth_auth_config(key: ProviderAPIKey) -> dict[str, Any] | None:
-    if str(getattr(key, "auth_type", "") or "").strip().lower() != "oauth":
-        return None
-
-    auth_config_raw = getattr(key, "auth_config", None)
-    if not auth_config_raw:
-        return None
-
-    try:
-        decrypted = crypto_service.decrypt(auth_config_raw)
-        parsed = json.loads(decrypted)
-        if isinstance(parsed, dict):
-            return parsed
-    except Exception:
-        return None
-
-    return None
+    return extract_persisted_oauth_auth_config(key)
 
 
 def _normalize_oauth_expires_at(raw: Any) -> int | None:
-    value = _to_float(raw)
-    if value is None or value <= 0:
-        return None
-    # 兼容毫秒时间戳
-    if value > 1_000_000_000_000:
-        value /= 1000
-    return int(value)
+    return normalize_persisted_oauth_expires_at(raw)
 
 
 def _derive_oauth_expires_at(
     key: ProviderAPIKey, auth_config: dict[str, Any] | None = None
 ) -> int | None:
-    if str(getattr(key, "auth_type", "") or "").strip().lower() != "oauth":
-        return None
-
-    cfg = auth_config if isinstance(auth_config, dict) else _extract_oauth_auth_config(key)
-    if cfg:
-        for field in ("expires_at", "expiresAt", "expiry", "exp"):
-            expires_at = _normalize_oauth_expires_at(cfg.get(field))
-            if expires_at is not None:
-                return expires_at
-
-    # 兼容历史字段
-    expires_dt = getattr(key, "expires_at", None)
-    if isinstance(expires_dt, datetime):
-        return int(expires_dt.timestamp())
-    return None
+    return derive_persisted_oauth_expires_at(key, auth_config=auth_config)
 
 
 def _derive_oauth_plan_type(
@@ -864,7 +838,16 @@ def _has_no_weekly_limit(account_quota: Any) -> bool:
 def _detail_is_oauth_invalid(detail: PoolKeyDetail) -> bool:
     if _normalize_batch_text(detail.auth_type) != "oauth":
         return False
-    status_code = _normalize_batch_text(detail.account_status_code)
+    snapshot_oauth_code = _normalize_batch_text(getattr(detail.status_snapshot.oauth, "code", None))
+    if snapshot_oauth_code == "invalid":
+        return True
+    if snapshot_oauth_code == "expired":
+        return True
+    if snapshot_oauth_code == "check_failed":
+        return False
+    status_code = _normalize_batch_text(
+        getattr(detail.status_snapshot.account, "code", None) or detail.account_status_code
+    )
     if status_code in _TOKEN_ISSUE_CODES:
         return True
     if status_code in _ACCOUNT_BANNED_CODES or status_code == "oauth_request_failed":
@@ -883,9 +866,16 @@ def _detail_is_oauth_invalid(detail: PoolKeyDetail) -> bool:
 
 
 def _detail_is_banned(detail: PoolKeyDetail) -> bool:
+    snapshot_account_code = _normalize_batch_text(
+        getattr(detail.status_snapshot.account, "code", None)
+    )
+    if snapshot_account_code in _ACCOUNT_BANNED_CODES:
+        return True
     if _normalize_batch_text(detail.account_status_code) in _ACCOUNT_BANNED_CODES:
         return True
-    reason = _normalize_batch_text(detail.oauth_invalid_reason)
+    reason = _normalize_batch_text(
+        getattr(detail.status_snapshot.account, "reason", None) or detail.oauth_invalid_reason
+    )
     if reason and _BANNED_REASON_PATTERN.search(reason):
         return True
     for item in detail.scheduling_reasons or []:
@@ -916,12 +906,15 @@ def _matches_pool_key_search(
         detail.key_name,
         detail.auth_type,
         detail.oauth_plan_type,
-        detail.account_status_label,
-        detail.account_status_reason,
+        getattr(detail.status_snapshot.account, "label", None) or detail.account_status_label,
+        getattr(detail.status_snapshot.account, "reason", None) or detail.account_status_reason,
         detail.account_quota,
         "独立代理" if _detail_has_proxy(detail) else "未配置代理",
         "已启用" if detail.is_active else "已禁用",
-        detail.oauth_invalid_reason,
+        getattr(detail.status_snapshot.oauth, "reason", None) or detail.oauth_invalid_reason,
+        getattr(detail.status_snapshot.oauth, "label", None),
+        getattr(detail.status_snapshot.quota, "label", None),
+        getattr(detail.status_snapshot.quota, "reason", None),
     ]
     return any(keyword in _normalize_batch_text(part) for part in parts)
 
@@ -984,7 +977,9 @@ def _detail_is_schedulable(detail: PoolKeyDetail) -> bool:
 
     if not detail.is_active:
         return False
-    if detail.account_status_blocked:
+    if bool(
+        getattr(detail.status_snapshot.account, "blocked", False) or detail.account_status_blocked
+    ):
         return False
     if detail.cooldown_reason:
         return False
@@ -1081,11 +1076,15 @@ async def _serialize_pool_key_details(
         cost_limit = pcfg.cost_limit_per_key_tokens if pcfg else None
         latency_avg_raw = latency_avgs.get(kid)
         latency_avg_ms = float(latency_avg_raw) if latency_avg_raw is not None else None
-        account_state = resolve_pool_account_state(
+        oauth_auth_config = _extract_oauth_auth_config(k)
+        oauth_expires_at = _derive_oauth_expires_at(k, auth_config=oauth_auth_config)
+        status_snapshot = resolve_provider_key_status_snapshot(
+            k,
             provider_type=provider_type,
-            upstream_metadata=getattr(k, "upstream_metadata", None),
-            oauth_invalid_reason=getattr(k, "oauth_invalid_reason", None),
+            auth_config=oauth_auth_config,
+            oauth_expires_at=oauth_expires_at,
         )
+        account_state = status_snapshot.account
         (
             scheduling_status,
             scheduling_reason,
@@ -1153,7 +1152,7 @@ async def _serialize_pool_key_details(
         key_total_tokens = int(getattr(k, "total_tokens", 0) or 0)
         key_total_cost_usd = _serialize_money(getattr(k, "total_cost_usd", 0.0))
         key_last_used_at = getattr(k, "last_used_at", None)
-        oauth_auth_config = _extract_oauth_auth_config(k)
+        oauth_invalid_at = status_snapshot.oauth.invalid_at
 
         key_details.append(
             PoolKeyDetail(
@@ -1161,12 +1160,8 @@ async def _serialize_pool_key_details(
                 key_name=str(getattr(k, "name", "") or ""),
                 is_active=bool(k.is_active),
                 auth_type=str(getattr(k, "auth_type", "api_key") or "api_key"),
-                oauth_expires_at=_derive_oauth_expires_at(k, auth_config=oauth_auth_config),
-                oauth_invalid_at=(
-                    int(k.oauth_invalid_at.timestamp())
-                    if getattr(k, "oauth_invalid_at", None)
-                    else None
-                ),
+                oauth_expires_at=oauth_expires_at,
+                oauth_invalid_at=oauth_invalid_at,
                 oauth_invalid_reason=getattr(k, "oauth_invalid_reason", None),
                 oauth_plan_type=_derive_oauth_plan_type(
                     k, provider_type, auth_config=oauth_auth_config
@@ -1181,10 +1176,8 @@ async def _serialize_pool_key_details(
                 account_status_blocked=account_state.blocked,
                 account_status_recoverable=bool(getattr(account_state, "recoverable", False)),
                 account_status_source=getattr(account_state, "source", None),
-                quota_updated_at=_extract_quota_updated_at(
-                    provider_type,
-                    getattr(k, "upstream_metadata", None),
-                ),
+                status_snapshot=asdict(status_snapshot),
+                quota_updated_at=status_snapshot.quota.updated_at,
                 health_score=health_score,
                 circuit_breaker_open=any_circuit_open,
                 api_formats=api_formats,

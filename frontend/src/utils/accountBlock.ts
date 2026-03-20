@@ -72,12 +72,15 @@ export function classifyAccountBlockLabel(reason: string): string {
 }
 
 export function cleanAccountBlockReason(reason: string): string {
-  return reason.replace(/^\[(ACCOUNT_BLOCK|OAUTH_EXPIRED)\]\s*/i, '').trim()
+  return reason
+    .replace(/^\[(ACCOUNT_BLOCK|OAUTH_EXPIRED)\]\s*/i, '')
+    .replace(/\s*\[REFRESH_FAILED\][\s\S]*$/i, '')
+    .trim()
 }
 
 export function isRefreshFailedReason(reason: string | null | undefined): boolean {
   if (!reason) return false
-  return reason.trim().startsWith('[REFRESH_FAILED]')
+  return reason.includes('[REFRESH_FAILED]')
 }
 
 export function isOAuthExpiredReason(reason: string | null | undefined): boolean {

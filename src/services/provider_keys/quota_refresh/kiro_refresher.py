@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from src.core.crypto import crypto_service
 from src.core.logger import logger
 from src.models.database import Provider, ProviderAPIKey, ProviderEndpoint
+from src.services.provider_keys.quota_refresh._helpers import build_success_state_update
 
 
 async def refresh_kiro_key_quota(
@@ -132,10 +133,7 @@ async def refresh_kiro_key_quota(
         metadata["banned_at"] = None
         # 收集元数据，稍后统一更新数据库（存储到 kiro 子对象）
         metadata_updates[key.id] = {"kiro": metadata}
-        state_updates[key.id] = {
-            "oauth_invalid_at": None,
-            "oauth_invalid_reason": None,
-        }
+        state_updates[key.id] = build_success_state_update(key)
 
         # 如果 auth_config 有更新（例如 token 刷新），也需要更新
         if updated_auth_config:

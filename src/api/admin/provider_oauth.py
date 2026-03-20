@@ -51,6 +51,85 @@ from src.utils.auth_utils import require_admin
 router = APIRouter(prefix="/api/admin/provider-oauth", tags=["Provider OAuth"])
 
 
+def _normalize_oauth_refresh_error_message(
+    message: str | None,
+    *,
+    status_code: int | None = None,
+    error_code: str | None = None,
+    error_type: str | None = None,
+) -> str:
+    text = str(message or "").strip()
+    lowered = text.lower()
+    code = str(error_code or "").strip().lower()
+    err_type = str(error_type or "").strip().lower()
+
+    if code == "refresh_token_reused" or (
+        "already been used to generate a new access token" in lowered
+    ):
+        return "refresh_token 已被使用并轮换，请重新登录授权"
+
+    if code in {"invalid_grant", "invalid_refresh_token"} or (
+        "refresh token" in lowered
+        and any(keyword in lowered for keyword in ("expired", "revoked", "invalid"))
+    ):
+        return "refresh_token 无效、已过期或已撤销，请重新登录授权"
+
+    if err_type == "invalid_request_error" and text:
+        return text
+
+    if text:
+        return text
+    if status_code is not None:
+        return f"HTTP {status_code}"
+    return "未知错误"
+
+
+def _extract_oauth_refresh_error_reason(resp: httpx.Response) -> str:
+    status_code = int(resp.status_code)
+    message: str | None = None
+    error_code: str | None = None
+    error_type: str | None = None
+
+    try:
+        error_body = resp.json()
+        if isinstance(error_body, dict):
+            err = error_body.get("error")
+            if isinstance(err, dict):
+                raw_message = err.get("message") or err.get("error_description")
+                if raw_message is not None:
+                    message = str(raw_message).strip() or None
+                raw_code = err.get("code")
+                if raw_code is not None:
+                    error_code = str(raw_code).strip() or None
+                raw_type = err.get("type")
+                if raw_type is not None:
+                    error_type = str(raw_type).strip() or None
+            elif isinstance(err, str):
+                message = err.strip() or None
+            raw_message = error_body.get("message") or error_body.get("error_description")
+            if raw_message is not None and not message:
+                message = str(raw_message).strip() or None
+            raw_code = error_body.get("code")
+            if raw_code is not None and not error_code:
+                error_code = str(raw_code).strip() or None
+            raw_type = error_body.get("type")
+            if raw_type is not None and not error_type:
+                error_type = str(raw_type).strip() or None
+    except Exception:
+        pass
+
+    if not message:
+        text = str(getattr(resp, "text", "") or "").strip()
+        message = text[:300] if text else None
+
+    return _normalize_oauth_refresh_error_message(
+        message,
+        status_code=status_code,
+        error_code=error_code,
+        error_type=error_type,
+    )
+
+
 def _store_completed_oauth_sync(
     key_id: str,
     provider_type: str,
@@ -71,22 +150,31 @@ def _mark_refresh_failed_sync(key_id: str, reason: str) -> None:
         if not key:
             raise NotFoundException("Key 不存在", "key")
         current_reason = str(getattr(key, "oauth_invalid_reason", None) or "").strip()
-        if _should_preserve_refresh_failure_reason(current_reason):
+        merged_reason = _merge_refresh_failure_reason(current_reason, reason)
+        if merged_reason is None:
             return
         key.oauth_invalid_at = datetime.now(timezone.utc)
-        key.oauth_invalid_reason = reason
+        key.oauth_invalid_reason = merged_reason
 
 
-def _should_preserve_refresh_failure_reason(reason: str | None) -> bool:
+def _merge_refresh_failure_reason(current_reason: str | None, refresh_reason: str) -> str | None:
     from src.services.provider.oauth_token import is_account_level_block
     from src.services.provider.pool.account_state import OAUTH_EXPIRED_PREFIX
 
-    text = str(reason or "").strip()
-    if not text:
-        return False
-    if is_account_level_block(text):
-        return True
-    return text.startswith(OAUTH_EXPIRED_PREFIX)
+    current = str(current_reason or "").strip()
+    next_reason = str(refresh_reason or "").strip()
+    if not next_reason:
+        return current or None
+    if not current:
+        return next_reason
+    if current.startswith(OAUTH_EXPIRED_PREFIX):
+        return None
+    if is_account_level_block(current):
+        if "[REFRESH_FAILED]" in current:
+            head, _sep, _tail = current.partition("[REFRESH_FAILED]")
+            return f"{head.rstrip()}\n{next_reason}".strip()
+        return f"{current}\n{next_reason}"
+    return next_reason
 
 
 def _store_refreshed_oauth_sync(
@@ -1168,15 +1256,7 @@ async def refresh_oauth(
         )
 
         if resp.status_code < 200 or resp.status_code >= 300:
-            error_reason = f"HTTP {resp.status_code}"
-            try:
-                error_body = resp.json()
-                if "error" in error_body:
-                    error_reason = str(
-                        error_body.get("error_description") or error_body.get("error")
-                    )
-            except Exception:
-                error_reason = resp.text[:100] if resp.text else f"HTTP {resp.status_code}"
+            error_reason = _extract_oauth_refresh_error_reason(resp)
 
             if resp.status_code in (400, 401, 403):
                 await run_in_threadpool(
@@ -1194,7 +1274,7 @@ async def refresh_oauth(
                 refresh_error=error_reason,
             )
 
-            raise InvalidRequestException(f"token refresh 失败: {error_reason}")
+            raise InvalidRequestException(f"Token 刷新失败：{error_reason}")
 
         token = resp.json()
         access_token = str(token.get("access_token") or "")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from src.services.provider.pool.account_state import (
+    build_provider_key_status_snapshot,
     resolve_pool_account_state,
     should_auto_remove_account_state,
 )
@@ -192,3 +193,68 @@ def test_auto_remove_state_excludes_token_expired_and_verification() -> None:
     assert should_auto_remove_account_state(expired) is False
     assert should_auto_remove_account_state(verification) is False
     assert should_auto_remove_account_state(disabled) is True
+
+
+def test_build_provider_key_status_snapshot_separates_account_block_from_oauth_state() -> None:
+    snapshot = build_provider_key_status_snapshot(
+        auth_type="oauth",
+        oauth_expires_at=2_000_000_000,
+        oauth_invalid_at=1_900_000_000,
+        oauth_invalid_reason="[ACCOUNT_BLOCK] 工作区已停用 (deactivated_workspace)",
+        provider_type="codex",
+        upstream_metadata=None,
+        now_ts=1_800_000_000,
+    )
+
+    assert snapshot.account.blocked is True
+    assert snapshot.account.code == "workspace_deactivated"
+    assert snapshot.account.label == "工作区停用"
+    assert snapshot.oauth.code == "valid"
+    assert snapshot.oauth.requires_reauth is False
+
+
+def test_build_provider_key_status_snapshot_keeps_refresh_failure_visible_beside_account_block() -> (
+    None
+):
+    snapshot = build_provider_key_status_snapshot(
+        auth_type="oauth",
+        oauth_expires_at=2_000_000_000,
+        oauth_invalid_at=1_900_000_000,
+        oauth_invalid_reason=(
+            "[ACCOUNT_BLOCK] 工作区已停用 (deactivated_workspace)\n"
+            "[REFRESH_FAILED] Token 续期失败 (400): refresh_token_reused"
+        ),
+        provider_type="codex",
+        upstream_metadata=None,
+        now_ts=1_800_000_000,
+    )
+
+    assert snapshot.account.blocked is True
+    assert snapshot.account.code == "workspace_deactivated"
+    assert snapshot.oauth.code == "invalid"
+    assert snapshot.oauth.label == "已失效"
+    assert snapshot.oauth.reason == "Token 续期失败 (400): refresh_token_reused"
+    assert snapshot.oauth.requires_reauth is True
+
+
+def test_build_provider_key_status_snapshot_marks_quota_exhausted() -> None:
+    snapshot = build_provider_key_status_snapshot(
+        auth_type="oauth",
+        oauth_expires_at=2_000_000_000,
+        oauth_invalid_at=None,
+        oauth_invalid_reason=None,
+        provider_type="codex",
+        upstream_metadata={
+            "codex": {
+                "primary_used_percent": 100.0,
+                "secondary_used_percent": 20.0,
+                "updated_at": 1_800_000_000,
+                "plan_type": "team",
+            }
+        },
+        now_ts=1_800_000_000,
+    )
+
+    assert snapshot.quota.code == "exhausted"
+    assert snapshot.quota.exhausted is True
+    assert snapshot.quota.reason == "Codex 周限额剩余 0%"

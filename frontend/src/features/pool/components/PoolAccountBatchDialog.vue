@@ -278,8 +278,13 @@ import {
 import { exportKey, refreshProviderQuota } from '@/api/endpoints/keys'
 import { refreshProviderOAuth } from '@/api/endpoints/provider_oauth'
 import { useProxyNodesStore } from '@/stores/proxy-nodes'
-import { classifyAccountBlockLabel, cleanAccountBlockReason, isAccountLevelBlockReason, isRefreshFailedReason } from '@/utils/accountBlock'
 import { getOAuthOrgBadge } from '@/utils/oauthIdentity'
+import {
+  getAccountStatusDisplay,
+  getAccountStatusTitle,
+  getOAuthStatusDisplay,
+  getOAuthStatusTitle,
+} from '@/utils/providerKeyStatus'
 
 type QuickSelectorValue =
   | 'banned'
@@ -423,21 +428,12 @@ function normalizeAuthTypeLabel(authType: string): string {
 }
 
 function getStatusBadgeLabel(key: PoolKeyDetail): string | null {
-  const explicitLabel = String(key.account_status_label || '').trim()
-  if (explicitLabel) return explicitLabel
+  const account = getAccountStatusDisplay(key)
+  if (account.blocked && account.label) return account.label
 
-  const reason = String(key.oauth_invalid_reason || '').trim()
-  if (isAccountLevelBlockReason(reason)) {
-    const cleaned = cleanAccountBlockReason(reason)
-    return classifyAccountBlockLabel(cleaned || reason)
-  }
-
-  if (normalizeText(key.auth_type) !== 'oauth') return null
-  if (isRefreshFailedReason(reason)) return '续期失败'
-  if (key.oauth_invalid_at != null || normalizeText(reason)) return 'Token 失效'
-  if (typeof key.oauth_expires_at === 'number' && key.oauth_expires_at > 0) {
-    return key.oauth_expires_at * 1000 <= Date.now() ? 'Token 过期' : null
-  }
+  const oauth = getOAuthStatusDisplay(key, 0)
+  if (oauth?.isInvalid) return 'Token 失效'
+  if (oauth?.isExpired) return 'Token 过期'
   return null
 }
 
@@ -445,20 +441,11 @@ function getStatusBadgeTitle(key: PoolKeyDetail): string {
   const label = getStatusBadgeLabel(key)
   if (!label) return ''
 
-  const explicitReason = String(key.account_status_reason || '').trim()
-  if (explicitReason) return `${label}: ${explicitReason}`
+  const accountTitle = getAccountStatusTitle(key)
+  if (accountTitle) return accountTitle
 
-  const reason = String(key.oauth_invalid_reason || '').trim()
-  if (!reason) return label
-  if (isAccountLevelBlockReason(reason)) {
-    const cleaned = cleanAccountBlockReason(reason)
-    return cleaned ? `${label}: ${cleaned}` : label
-  }
-  if (isRefreshFailedReason(reason)) {
-    const cleaned = reason.replace(/^\[REFRESH_FAILED\]\s*/i, '').trim()
-    return cleaned ? `${label}: ${cleaned}` : label
-  }
-  return `${label}: ${reason}`
+  const oauthTitle = getOAuthStatusTitle(key, 0)
+  return oauthTitle || label
 }
 
 function formatRelativeTime(value: string): string {

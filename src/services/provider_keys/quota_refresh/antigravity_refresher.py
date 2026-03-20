@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from src.core.logger import logger
 from src.models.database import Provider, ProviderAPIKey, ProviderEndpoint
 from src.services.provider.auth import get_provider_auth
+from src.services.provider_keys.quota_refresh._helpers import build_success_state_update
 
 
 async def refresh_antigravity_key_quota(
@@ -110,10 +111,7 @@ async def refresh_antigravity_key_quota(
             upstream_meta["antigravity"]["forbidden_reason"] = None
             upstream_meta["antigravity"]["forbidden_at"] = None
         metadata_updates[key.id] = upstream_meta
-        state_updates[key.id] = {
-            "oauth_invalid_at": None,
-            "oauth_invalid_reason": None,
-        }
+        state_updates[key.id] = build_success_state_update(key)
         return {
             "key_id": key.id,
             "key_name": key.name,
