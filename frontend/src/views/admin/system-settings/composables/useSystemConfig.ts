@@ -298,7 +298,7 @@ export function useSystemConfig() {
         {
           key: 'default_user_initial_gift_usd',
           value: systemConfig.value.default_user_initial_gift_usd,
-          description: '默认用户初始赠款（美元）',
+          description: '默认用户初始赠款（人民币 CNY）',
         },
         {
           key: 'rate_limit_per_minute',

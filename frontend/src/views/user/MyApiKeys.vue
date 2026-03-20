@@ -80,7 +80,7 @@
                 密钥
               </TableHead>
               <TableHead class="min-w-[100px] h-12 font-semibold">
-                费用(USD)
+                费用 (CNY)
               </TableHead>
               <TableHead class="min-w-[100px] h-12 font-semibold">
                 请求次数

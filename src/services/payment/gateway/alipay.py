@@ -40,8 +40,8 @@ class AlipayGateway(PaymentGateway):
         gateway_order_id = getattr(order, "gateway_order_id", None) or getattr(order, "order_no")
         client = self._get_alipay_client()
         
-        # Convert USD to CNY for Alipay (Fixed rate 7.2)
-        cny_amount = float(getattr(order, "amount_usd", 0)) * 7.2
+        # Use raw order amount 1:1 for CNY
+        cny_amount = float(getattr(order, "amount_usd", 0))
         amount_str = f"{cny_amount:.2f}"
         
         # domain = f"http://{config.host}:{config.port}"
@@ -57,7 +57,7 @@ class AlipayGateway(PaymentGateway):
         # 订单总金额，单位：元（精确到小数点后两位）
         model.total_amount = amount_str
         # 订单标题，用于在支付界面显示
-        model.subject = f"Aether Recharge - {getattr(order, 'order_no')}"
+        model.subject = f"Gravity TOKEN充值- {getattr(order, 'order_no')}"
         # 销售产品码，与支付宝签约的产品码名称。注：目前电脑支付场景下仅支持FAST_INSTANT_TRADE_PAY
         model.product_code = "FAST_INSTANT_TRADE_PAY"
         # 支持前置模式和跳转模式。

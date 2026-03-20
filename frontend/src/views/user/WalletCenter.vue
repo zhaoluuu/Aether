@@ -73,7 +73,7 @@
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div class="space-y-1.5">
-              <Label>充值金额 (USD)</Label>
+              <Label>充值金额 (CNY)</Label>
               <Input
                 v-model.number="rechargeForm.amount_usd"
                 type="number"
@@ -157,7 +157,7 @@
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div class="space-y-1.5">
-              <Label>退款金额 (USD)</Label>
+              <Label>退款金额 (CNY)</Label>
               <Input
                 v-model.number="refundForm.amount_usd"
                 type="number"
@@ -216,7 +216,7 @@
           </div>
 
           <div class="rounded-xl border border-border/60 bg-muted/20 p-3 text-xs text-muted-foreground">
-            仅充值余额可退款，赠款余额不可退款。
+            仅充值余额可退款，赠款余额不可退款。单位均为人民币 (CNY)。
           </div>
 
           <Button

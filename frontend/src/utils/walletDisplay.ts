@@ -14,7 +14,7 @@ export function formatWalletCurrency(
 ): string {
   const decimals = options?.decimals ?? 2
   const amount = Number(value ?? 0)
-  return `$${amount.toFixed(decimals)}`
+  return `¥${amount.toFixed(decimals)}`
 }
 export type BadgeVariant = 'success' | 'warning' | 'default' | 'secondary' | 'destructive' | 'outline' | 'dark' | undefined;
 

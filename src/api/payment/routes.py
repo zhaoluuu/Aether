@@ -114,7 +114,8 @@ async def handle_alipay_webhook(
             order = PaymentService.get_order(db, order_no=order_no, gateway_order_id=None)
             
             if order:
-                expected_cny = float(order.amount_usd) * 7.2
+                # Use raw amount 1:1 for CNY
+                expected_cny = float(order.amount_usd)
                 actual_cny = float(payload.get("total_amount", 0))
                 
                 # Verify amount within sensible precision
@@ -134,7 +135,7 @@ async def handle_alipay_webhook(
                     amount_usd=order.amount_usd,
                     pay_amount=actual_cny,
                     pay_currency="CNY",
-                    exchange_rate=7.2,
+                    exchange_rate=1.0,
                 )
                 db.commit()
             else:
