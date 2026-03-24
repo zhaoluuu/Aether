@@ -6,7 +6,10 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from src.core.exceptions import InvalidRequestException
-from src.services.provider.adapters.vertex_ai.transport import build_vertex_ai_url
+from src.services.provider.adapters.vertex_ai.transport import (
+    build_vertex_ai_url,
+    is_vertex_ai_context,
+)
 
 
 def test_build_vertex_ai_url_uses_express_mode_for_gemini_api_key(
@@ -92,3 +95,29 @@ def test_build_vertex_ai_url_uses_standard_vertex_path_for_claude_service_accoun
         == "/v1/projects/demo-project/locations/global/publishers/anthropic/models/claude-3-7-sonnet@20250219:rawPredict"
     )
     assert parse_qs(parsed.query) == {"foo": ["bar"]}
+
+
+def test_is_vertex_ai_context_ignores_detached_provider_relation_for_non_vertex_provider() -> None:
+    class _DetachedEndpoint:
+        base_url = "https://chatgpt.com/backend-api/codex"
+        api_format = "openai:cli"
+
+        @property
+        def provider(self) -> object:
+            raise RuntimeError("detached relation")
+
+    class _DetachedKey:
+        auth_type = "oauth"
+
+        @property
+        def provider(self) -> object:
+            raise RuntimeError("detached relation")
+
+    assert (
+        is_vertex_ai_context(
+            provider_type="codex",
+            endpoint=_DetachedEndpoint(),
+            key=_DetachedKey(),
+        )
+        is False
+    )

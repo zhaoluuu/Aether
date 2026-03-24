@@ -31,6 +31,15 @@ from src.services.provider.format import normalize_endpoint_signature
 from src.services.provider.transport import looks_like_vertex_ai_host, redact_url_for_log
 
 
+def _safe_getattr(obj: Any, attr: str) -> Any:
+    if obj is None:
+        return None
+    try:
+        return getattr(obj, attr)
+    except Exception:
+        return None
+
+
 def is_vertex_ai_context(
     *,
     base_url: str | None = None,
@@ -39,22 +48,34 @@ def is_vertex_ai_context(
     key: Any = None,
 ) -> bool:
     """Best-effort 判断当前测试/请求上下文是否应视为 Vertex AI。"""
-    if normalize_provider_type(provider_type) == ProviderType.VERTEX_AI.value:
+    normalized_provider_type = normalize_provider_type(provider_type)
+    if normalized_provider_type == ProviderType.VERTEX_AI.value:
         return True
 
+    # 显式 provider_type 已存在且不是 Vertex AI 时，避免再触发
+    # endpoint.provider / key.provider 的懒加载。
+    if normalized_provider_type:
+        candidate_base_url = str(base_url or _safe_getattr(endpoint, "base_url") or "").strip()
+        if not candidate_base_url:
+            return False
+
+        endpoint_sig = str(_safe_getattr(endpoint, "api_format") or "").strip()
+        auth_type = str(_safe_getattr(key, "auth_type") or "").strip()
+        return looks_like_vertex_ai_host(candidate_base_url, endpoint_sig, auth_type)
+
     for obj in (endpoint, key):
-        provider = getattr(obj, "provider", None) if obj is not None else None
-        if normalize_provider_type(getattr(provider, "provider_type", None)) == (
+        provider = _safe_getattr(obj, "provider")
+        if normalize_provider_type(_safe_getattr(provider, "provider_type")) == (
             ProviderType.VERTEX_AI.value
         ):
             return True
 
-    candidate_base_url = str(base_url or getattr(endpoint, "base_url", "") or "").strip()
+    candidate_base_url = str(base_url or _safe_getattr(endpoint, "base_url") or "").strip()
     if not candidate_base_url:
         return False
 
-    endpoint_sig = str(getattr(endpoint, "api_format", "") or "").strip()
-    auth_type = str(getattr(key, "auth_type", "") or "").strip()
+    endpoint_sig = str(_safe_getattr(endpoint, "api_format") or "").strip()
+    auth_type = str(_safe_getattr(key, "auth_type") or "").strip()
     return looks_like_vertex_ai_host(candidate_base_url, endpoint_sig, auth_type)
 
 

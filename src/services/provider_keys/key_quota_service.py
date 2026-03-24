@@ -48,20 +48,30 @@ def _normalize_api_format(api_format: Any) -> str:
     return api_format.strip().lower()
 
 
-def _select_refresh_endpoint(provider: Provider, provider_type: str) -> ProviderEndpoint | None:
+def _select_refresh_endpoint(
+    db: Session,
+    *,
+    provider_id: str,
+    provider_type: str,
+) -> ProviderEndpoint | None:
     """为配额刷新选择端点。"""
+    endpoint_query = db.query(ProviderEndpoint).filter(
+        ProviderEndpoint.provider_id == provider_id,
+        ProviderEndpoint.is_active.is_(True),
+    )
+
     if provider_type == ProviderType.CODEX:
-        for ep in provider.endpoints:
-            if _normalize_api_format(ep.api_format) == "openai:cli" and ep.is_active:
-                return ep
+        endpoint = endpoint_query.filter(ProviderEndpoint.api_format == "openai:cli").first()
+        if endpoint is not None:
+            return endpoint
         raise InvalidRequestException("找不到有效的 openai:cli 端点")
 
     if provider_type == ProviderType.ANTIGRAVITY:
         # Prefer the new signature, but keep backward-compat with existing DB rows.
         for sig in ("gemini:chat", "gemini:cli"):
-            for ep in provider.endpoints:
-                if _normalize_api_format(ep.api_format) == sig and ep.is_active:
-                    return ep
+            endpoint = endpoint_query.filter(ProviderEndpoint.api_format == sig).first()
+            if endpoint is not None:
+                return endpoint
         raise InvalidRequestException("找不到有效的 gemini:chat/gemini:cli 端点")
 
     # Kiro 不需要端点检查，直接使用 auth_config
@@ -151,7 +161,11 @@ async def refresh_provider_quota_for_provider(
             "auto_removed": 0,
         }
 
-    endpoint = _select_refresh_endpoint(provider, provider_type)
+    endpoint = _select_refresh_endpoint(
+        db,
+        provider_id=provider_id,
+        provider_type=provider_type,
+    )
     handler = _resolve_quota_refresh_handler(provider_type)
 
     results: list[dict[str, Any]] = []

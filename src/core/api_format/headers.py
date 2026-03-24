@@ -85,6 +85,16 @@ UPSTREAM_DROP_HEADERS: frozenset[str] = frozenset(
         "x-forwarded-scheme",
         "x-forwarded-host",
         "x-forwarded-port",
+        # CDN / WAF / 边缘网络注入的头部 - 不应透传给上游 Provider
+        "cf-connecting-ip",
+        "cf-connecting-ipv6",
+        "cf-ipcountry",
+        "cf-ray",
+        "cf-visitor",
+        "cf-ew-via",
+        "cf-worker",
+        "cdn-loop",
+        "true-client-ip",
     }
 )
 
