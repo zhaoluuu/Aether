@@ -2069,6 +2069,8 @@ class ProviderAPIKey(ExportMixin, Base):
     # 状态
     is_active = Column(Boolean, default=True, nullable=False)
     expires_at = Column(DateTime(timezone=True), nullable=True)  # 过期时间
+    time_range_start = Column(String(5), nullable=True)  # 每日启用开始时间（HH:MM，按 APP_TIMEZONE）
+    time_range_end = Column(String(5), nullable=True)  # 每日启用结束时间（HH:MM，按 APP_TIMEZONE）
 
     # 自动获取模型配置
     auto_fetch_models = Column(Boolean, default=False, nullable=False)  # 是否启用自动获取模型

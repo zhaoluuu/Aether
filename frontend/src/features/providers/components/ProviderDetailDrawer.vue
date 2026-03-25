@@ -311,6 +311,13 @@
                             <span class="text-[11px] font-mono text-muted-foreground">
                               {{ key.auth_type === 'oauth' ? '[Refresh Token]' : (key.auth_type === 'service_account' ? '[Service Account]' : key.api_key_masked) }}
                             </span>
+                            <span
+                              v-if="key.time_range_start && key.time_range_end"
+                              class="text-[10px] text-muted-foreground"
+                              :title="`仅在 ${key.time_range_start}-${key.time_range_end} 参与调度`"
+                            >
+                              {{ key.time_range_start }}-{{ key.time_range_end }}
+                            </span>
                             <Button
                               v-if="key.auth_type === 'oauth'"
                               variant="ghost"

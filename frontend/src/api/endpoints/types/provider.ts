@@ -240,6 +240,8 @@ export interface EndpointAPIKey {
   // 缓存与熔断配置
   cache_ttl_minutes: number  // 缓存 TTL（分钟），0=禁用
   max_probe_interval_minutes: number  // 熔断探测间隔（分钟）
+  time_range_start?: string | null
+  time_range_end?: string | null
   // 按 endpoint signature 的健康度数据
   health_by_format?: Record<string, FormatHealthData>
   circuit_breaker_by_format?: Record<string, FormatCircuitBreakerData>
@@ -386,6 +388,8 @@ export interface EndpointAPIKeyUpdate {
   capabilities?: Record<string, boolean> | null
   cache_ttl_minutes?: number
   max_probe_interval_minutes?: number
+  time_range_start?: string | null
+  time_range_end?: string | null
   note?: string
   is_active?: boolean
   auto_fetch_models?: boolean  // 是否启用自动获取模型

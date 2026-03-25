@@ -1758,6 +1758,8 @@ function toEndpointApiKey(key: PoolKeyDetail): EndpointAPIKey {
     capabilities: key.capabilities ?? null,
     cache_ttl_minutes: key.cache_ttl_minutes ?? 5,
     max_probe_interval_minutes: key.max_probe_interval_minutes ?? 32,
+    time_range_start: key.time_range_start ?? null,
+    time_range_end: key.time_range_end ?? null,
     health_score: key.health_score ?? 1,
     circuit_breaker_open: key.circuit_breaker_open ?? false,
     consecutive_failures: 0,

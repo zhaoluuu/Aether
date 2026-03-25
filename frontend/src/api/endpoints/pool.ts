@@ -123,6 +123,8 @@ export interface PoolKeyDetail {
   rpm_limit?: number | null
   cache_ttl_minutes?: number
   max_probe_interval_minutes?: number
+  time_range_start?: string | null
+  time_range_end?: string | null
   note?: string | null
   allowed_models?: AllowedModels
   capabilities?: Record<string, boolean> | null

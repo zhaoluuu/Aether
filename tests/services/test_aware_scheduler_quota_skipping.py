@@ -3,6 +3,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 from src.services.scheduling.aware_scheduler import CacheAwareScheduler
+from src.utils.time_window import DailyTimeWindowStatus
 
 
 def _make_key(
@@ -16,6 +17,8 @@ def _make_key(
     key.allowed_models = allowed_models
     key.capabilities = capabilities or {}
     key.upstream_metadata = upstream_metadata
+    key.time_range_start = None
+    key.time_range_end = None
     return key
 
 
@@ -206,3 +209,32 @@ def test_antigravity_quota_uses_mapping_matched_model(mock_get_health_monitor: M
     assert mapped == "ag-model"
     assert ok is False
     assert reason == "Antigravity 模型 ag-model 配额剩余 0%"
+
+
+@patch("src.services.scheduling.candidate_builder.resolve_provider_key_time_window_status")
+@patch("src.services.scheduling.candidate_builder.get_health_monitor")
+def test_time_window_outside_range_skips_key(
+    mock_get_health_monitor: MagicMock,
+    mock_time_window_status: MagicMock,
+) -> None:
+    mock_get_health_monitor.return_value.get_circuit_breaker_status.return_value = (True, None)
+    mock_time_window_status.return_value = DailyTimeWindowStatus(
+        start="10:00",
+        end="20:00",
+        has_window=True,
+        is_available=False,
+        timezone_name="Asia/Shanghai",
+        current_local_time="21:30",
+    )
+    scheduler = CacheAwareScheduler()
+    key = _make_key(upstream_metadata={})
+
+    ok, reason, _mapped = scheduler._candidate_builder._check_key_availability(
+        key,
+        api_format="openai:chat",
+        model_name="any-model",
+        provider_type="custom",
+    )
+
+    assert ok is False
+    assert reason == "当前不在可用时段 10:00-20:00"

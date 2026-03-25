@@ -130,6 +130,8 @@ class PoolKeyDetail(BaseModel):
     cache_ttl_minutes: int = 5
     max_probe_interval_minutes: int = 32
     note: str | None = None
+    time_range_start: str | None = None
+    time_range_end: str | None = None
     allowed_models: list[str] | None = None
     capabilities: dict[str, bool] | None = None
     auto_fetch_models: bool = False

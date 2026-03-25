@@ -8,7 +8,7 @@ import re
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from src.models.admin_requests import (
     ClaudeCodeAdvancedConfig,
@@ -17,6 +17,10 @@ from src.models.admin_requests import (
     ProxyConfig,
 )
 from src.models.status_snapshot import ProviderKeyStatusSnapshotResponse
+from src.utils.time_window import (
+    normalize_daily_time_text,
+    validate_daily_time_window,
+)
 
 # ========== Header Rule 类型定义 ==========
 # 请求头规则支持三种操作：
@@ -568,6 +572,14 @@ class EndpointAPIKeyCreate(BaseModel):
 
     # 备注
     note: str | None = Field(default=None, max_length=500, description="备注说明（可选）")
+    time_range_start: str | None = Field(
+        default=None,
+        description="每日启用开始时间（HH:MM，按应用时区；为空表示全时段）",
+    )
+    time_range_end: str | None = Field(
+        default=None,
+        description="每日启用结束时间（HH:MM，按应用时区；为空表示全时段）",
+    )
 
     # 自动获取模型
     auto_fetch_models: bool = Field(
@@ -669,6 +681,18 @@ class EndpointAPIKeyCreate(BaseModel):
         v = re.sub(r"on\w+\s*=", "", v, flags=re.IGNORECASE)
         return v.strip()
 
+    @field_validator("time_range_start", "time_range_end")
+    @classmethod
+    def validate_time_range_fields(cls, v: str | None) -> str | None:
+        return normalize_daily_time_text(v)
+
+    @model_validator(mode="after")
+    def validate_time_window(self) -> "EndpointAPIKeyCreate":
+        start, end = validate_daily_time_window(self.time_range_start, self.time_range_end)
+        self.time_range_start = start
+        self.time_range_end = end
+        return self
+
 
 class EndpointAPIKeyUpdate(BaseModel):
     """更新 Endpoint API Key"""
@@ -728,6 +752,14 @@ class EndpointAPIKeyUpdate(BaseModel):
     )
     is_active: bool | None = Field(default=None, description="是否启用")
     note: str | None = Field(default=None, max_length=500, description="备注说明")
+    time_range_start: str | None = Field(
+        default=None,
+        description="每日启用开始时间（HH:MM，按应用时区；为空表示全时段）",
+    )
+    time_range_end: str | None = Field(
+        default=None,
+        description="每日启用结束时间（HH:MM，按应用时区；为空表示全时段）",
+    )
     auto_fetch_models: bool | None = Field(default=None, description="是否启用自动获取模型")
     locked_models: list[str] | None = Field(
         default=None, description="被锁定的模型列表（刷新时不会被删除）"
@@ -801,6 +833,24 @@ class EndpointAPIKeyUpdate(BaseModel):
         v = re.sub(r"javascript:", "", v, flags=re.IGNORECASE)
         v = re.sub(r"on\w+\s*=", "", v, flags=re.IGNORECASE)
         return v.strip()
+
+    @field_validator("time_range_start", "time_range_end")
+    @classmethod
+    def validate_update_time_range_fields(cls, v: str | None) -> str | None:
+        return normalize_daily_time_text(v)
+
+    @model_validator(mode="after")
+    def validate_update_time_window(self) -> "EndpointAPIKeyUpdate":
+        start_set = "time_range_start" in self.model_fields_set
+        end_set = "time_range_end" in self.model_fields_set
+        if not start_set and not end_set:
+            return self
+        if start_set != end_set:
+            raise ValueError("修改时间段时必须同时提供开始时间和结束时间")
+        start, end = validate_daily_time_window(self.time_range_start, self.time_range_end)
+        self.time_range_start = start
+        self.time_range_end = end
+        return self
 
 
 class OAuthOrganizationResponse(BaseModel):
@@ -927,6 +977,14 @@ class EndpointAPIKeyResponse(BaseModel):
 
     # 备注
     note: str | None = None
+    time_range_start: str | None = Field(
+        default=None,
+        description="每日启用开始时间（HH:MM，按应用时区；为空表示全时段）",
+    )
+    time_range_end: str | None = Field(
+        default=None,
+        description="每日启用结束时间（HH:MM，按应用时区；为空表示全时段）",
+    )
 
     # 自动获取模型
     auto_fetch_models: bool = Field(default=False, description="是否启用自动获取模型")

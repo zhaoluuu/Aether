@@ -58,6 +58,7 @@ from src.services.provider_keys.status_snapshot_store import (
 from src.services.provider_keys.status_snapshot_store import (
     resolve_provider_key_status_snapshot,
 )
+from src.utils.time_window import resolve_provider_key_time_window_status
 
 from .schemas import (
     BatchActionRequest,
@@ -419,6 +420,9 @@ def _build_pool_scheduling_state(
     account_blocked: bool,
     account_block_label: str | None,
     account_block_reason: str | None,
+    time_window_blocked: bool,
+    time_window_label: str | None,
+    time_window_detail: str | None,
     latency_avg_ms: float | None,
     cooldown_reason: str | None,
     cooldown_ttl_seconds: int | None,
@@ -434,6 +438,9 @@ def _build_pool_scheduling_state(
         account_blocked=account_blocked,
         account_block_label=account_block_label,
         account_block_reason=account_block_reason,
+        time_window_blocked=time_window_blocked,
+        time_window_label=time_window_label,
+        time_window_detail=time_window_detail,
         latency_avg_ms=latency_avg_ms,
         cooldown_reason=cooldown_reason,
         cooldown_ttl_seconds=cooldown_ttl_seconds,
@@ -721,6 +728,8 @@ _POOL_KEY_LOAD_ONLY_ATTRS: tuple[Any, ...] = (
     cast(Any, ProviderAPIKey.rpm_limit),
     cast(Any, ProviderAPIKey.cache_ttl_minutes),
     cast(Any, ProviderAPIKey.max_probe_interval_minutes),
+    cast(Any, ProviderAPIKey.time_range_start),
+    cast(Any, ProviderAPIKey.time_range_end),
     cast(Any, ProviderAPIKey.note),
     cast(Any, ProviderAPIKey.allowed_models),
     cast(Any, ProviderAPIKey.capabilities),
@@ -1085,6 +1094,7 @@ async def _serialize_pool_key_details(
             oauth_expires_at=oauth_expires_at,
         )
         account_state = status_snapshot.account
+        time_window_status = resolve_provider_key_time_window_status(k)
         (
             scheduling_status,
             scheduling_reason,
@@ -1095,6 +1105,9 @@ async def _serialize_pool_key_details(
             account_blocked=account_state.blocked,
             account_block_label=account_state.label,
             account_block_reason=account_state.reason,
+            time_window_blocked=not time_window_status.is_available,
+            time_window_label="时段外" if time_window_status.has_window else None,
+            time_window_detail=time_window_status.block_detail,
             latency_avg_ms=latency_avg_ms,
             cooldown_reason=cd_reason,
             cooldown_ttl_seconds=cd_ttl,
@@ -1191,6 +1204,8 @@ async def _serialize_pool_key_details(
                     v if (v := getattr(k, "max_probe_interval_minutes", None)) is not None else 32
                 ),
                 note=getattr(k, "note", None),
+                time_range_start=getattr(k, "time_range_start", None),
+                time_range_end=getattr(k, "time_range_end", None),
                 allowed_models=allowed_models,
                 capabilities=capabilities,
                 auto_fetch_models=bool(getattr(k, "auto_fetch_models", False)),

@@ -443,6 +443,8 @@ def _prepare_create_key_payload(
         auth_config=encrypted_auth_config,
         name=key_data.name,
         note=key_data.note,
+        time_range_start=key_data.time_range_start,
+        time_range_end=key_data.time_range_end,
         rate_multipliers=key_data.rate_multipliers,
         internal_priority=key_data.internal_priority,
         rpm_limit=key_data.rpm_limit,

@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, selectinload
 
+from src.config.settings import config
 from src.core.api_format.conversion.compatibility import is_format_compatible
 from src.core.api_format.enums import EndpointKind
 from src.core.api_format.signature import make_signature_key, parse_signature_key
@@ -41,6 +42,7 @@ from src.services.provider.pool.account_state import (
 )
 from src.services.scheduling.quota_skipper import is_key_quota_exhausted
 from src.services.scheduling.utils import release_db_connection_before_await
+from src.utils.time_window import resolve_provider_key_time_window_status
 
 if TYPE_CHECKING:
     from src.models.database import GlobalModel
@@ -370,6 +372,13 @@ class CandidateBuilder:
         )
         if not is_available:
             return False, circuit_reason or "熔断器已打开", None
+
+        time_window_status = resolve_provider_key_time_window_status(
+            key,
+            timezone_name=config.app_timezone,
+        )
+        if not time_window_status.is_available:
+            return False, time_window_status.block_reason or "当前不在可用时段", None
 
         # 模型权限检查：使用 allowed_models 白名单
         # None = 允许所有模型，[] = 拒绝所有模型，["a","b"] = 只允许指定模型

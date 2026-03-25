@@ -1801,6 +1801,8 @@ class AdminImportConfigAdapter(AdminApiAdapter):
                         auth_config=encrypted_auth_config,
                         name=key_data.get("name") or "Imported Key",
                         note=key_data.get("note"),
+                        time_range_start=key_data.get("time_range_start"),
+                        time_range_end=key_data.get("time_range_end"),
                         rate_multipliers=key_data.get("rate_multipliers"),
                         internal_priority=key_data.get("internal_priority", 50),
                         global_priority_by_format=key_data.get("global_priority_by_format"),

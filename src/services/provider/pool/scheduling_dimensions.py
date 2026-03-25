@@ -29,6 +29,9 @@ class PoolSchedulingSnapshot:
     account_blocked: bool = False
     account_block_label: str | None = None
     account_block_reason: str | None = None
+    time_window_blocked: bool = False
+    time_window_label: str | None = None
+    time_window_detail: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +143,35 @@ class _ManualEnableDimension:
             blocking=True,
             score=0.0,
             detail="账号被手动禁用",
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _TimeWindowDimension:
+    code: str = "time_window"
+    label: str = "时段外"
+    source: str = "policy"
+    weight: int = 7
+
+    def evaluate(self, snapshot: PoolSchedulingSnapshot) -> PoolSchedulingDimensionResult:
+        if not snapshot.time_window_blocked:
+            return PoolSchedulingDimensionResult(
+                code=self.code,
+                label=self.label,
+                source=self.source,
+                weight=self.weight,
+                status="ok",
+                score=1.0,
+            )
+        return PoolSchedulingDimensionResult(
+            code=self.code,
+            label=snapshot.time_window_label or self.label,
+            source=self.source,
+            weight=self.weight,
+            status="blocked",
+            blocking=True,
+            score=0.0,
+            detail=snapshot.time_window_detail or snapshot.time_window_label or self.label,
         )
 
 
@@ -456,6 +488,7 @@ def summarize_pool_scheduling_dimensions(
 def _register_default_dimensions() -> None:
     register_pool_scheduling_dimension("account_state", _AccountStateDimension())
     register_pool_scheduling_dimension("manual", _ManualEnableDimension())
+    register_pool_scheduling_dimension("time_window", _TimeWindowDimension())
     register_pool_scheduling_dimension("cooldown", _CooldownDimension())
     register_pool_scheduling_dimension("circuit", _CircuitBreakerDimension())
     register_pool_scheduling_dimension("cost", _CostDimension())

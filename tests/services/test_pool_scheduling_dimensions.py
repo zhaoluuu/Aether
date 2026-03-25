@@ -28,7 +28,16 @@ def _snapshot(**overrides: object) -> PoolSchedulingSnapshot:
 
 def test_default_dimension_registry_contains_core_dimensions() -> None:
     names = list_pool_scheduling_dimensions()
-    assert names == ("account_state", "manual", "cooldown", "circuit", "cost", "latency", "health")
+    assert names == (
+        "account_state",
+        "manual",
+        "time_window",
+        "cooldown",
+        "circuit",
+        "cost",
+        "latency",
+        "health",
+    )
 
 
 def test_summary_available_when_all_dimensions_ok() -> None:
@@ -50,6 +59,22 @@ def test_summary_blocked_when_manual_disabled() -> None:
     assert summary.reason == "manual_disabled"
     assert summary.candidate_eligible is False
     assert summary.blocked_count >= 1
+
+
+def test_summary_blocked_when_outside_time_window() -> None:
+    dimensions = evaluate_pool_scheduling_dimensions(
+        _snapshot(
+            time_window_blocked=True,
+            time_window_label="时段外",
+            time_window_detail="当前时间 21:30，可用时段 10:00-20:00（Asia/Shanghai）",
+        )
+    )
+    summary = summarize_pool_scheduling_dimensions(dimensions)
+
+    assert summary.status == "blocked"
+    assert summary.reason == "time_window"
+    assert summary.label == "时段外"
+    assert summary.candidate_eligible is False
 
 
 def test_summary_blocked_when_account_state_blocked() -> None:

@@ -149,7 +149,11 @@ def test_list_provider_keys_responses_uses_response_builder(
     keys = [SimpleNamespace(id="k1"), SimpleNamespace(id="k2")]
     db = _FakeListDB(provider=provider, keys=keys)
 
-    monkeypatch.setattr(query_service_module, "build_key_response", lambda key: {"id": key.id})
+    monkeypatch.setattr(
+        query_service_module,
+        "build_key_response",
+        lambda key, **_kwargs: {"id": key.id},
+    )
 
     result = list_provider_keys_responses(cast(Any, db), provider_id="p1", skip=0, limit=10)
     assert result == [{"id": "k1"}, {"id": "k2"}]

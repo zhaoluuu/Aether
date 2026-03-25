@@ -121,6 +121,46 @@
         />
       </div>
 
+      <div class="space-y-3 py-2 px-3 rounded-md border border-border/60 bg-muted/30">
+        <div class="flex items-center justify-between">
+          <div class="space-y-0.5">
+            <Label class="text-sm font-medium">时间段启用</Label>
+            <p class="text-xs text-muted-foreground">
+              默认全时段可用；开启后仅在指定时段参与请求分配
+            </p>
+          </div>
+          <Switch v-model="form.enable_time_window" />
+        </div>
+
+        <div
+          v-if="form.enable_time_window"
+          class="grid grid-cols-2 gap-3 pt-2 border-t border-border/40"
+        >
+          <div>
+            <Label class="text-xs">开始时间</Label>
+            <Input
+              v-model="form.time_range_start"
+              type="time"
+              class="h-8"
+            />
+          </div>
+          <div>
+            <Label class="text-xs">结束时间</Label>
+            <Input
+              v-model="form.time_range_end"
+              type="time"
+              class="h-8"
+            />
+          </div>
+        </div>
+        <p
+          v-if="form.enable_time_window"
+          class="text-xs text-muted-foreground"
+        >
+          按系统业务时区执行；支持跨天时段，例如 20:00-08:00
+        </p>
+      </div>
+
       <!-- API 格式选择 -->
       <div v-if="visibleApiFormats.length > 0">
         <Label class="mb-1.5 block">支持的 API 格式 *</Label>
@@ -468,6 +508,10 @@ const canSave = computed(() => {
   }
   // 必须至少选择一个 API 格式
   if (form.value.api_formats.length === 0) return false
+  if (form.value.enable_time_window) {
+    if (!form.value.time_range_start || !form.value.time_range_end) return false
+    if (form.value.time_range_start === form.value.time_range_end) return false
+  }
   return true
 })
 
@@ -498,6 +542,9 @@ const form = ref({
   cache_ttl_minutes: 5,
   max_probe_interval_minutes: 32,
   note: '',
+  enable_time_window: false,
+  time_range_start: '',
+  time_range_end: '',
   is_active: true,
   capabilities: {} as Record<string, boolean>,
   auto_fetch_models: false,
@@ -604,6 +651,9 @@ function resetForm() {
     cache_ttl_minutes: 5,
     max_probe_interval_minutes: 32,
     note: '',
+    enable_time_window: false,
+    time_range_start: '',
+    time_range_end: '',
     is_active: true,
     capabilities: {},
     auto_fetch_models: defaultAutoFetchModels.value,
@@ -639,6 +689,9 @@ function loadKeyData() {
     cache_ttl_minutes: props.editingKey.cache_ttl_minutes ?? 5,
     max_probe_interval_minutes: props.editingKey.max_probe_interval_minutes ?? 32,
     note: props.editingKey.note || '',
+    enable_time_window: !!(props.editingKey.time_range_start && props.editingKey.time_range_end),
+    time_range_start: props.editingKey.time_range_start || '',
+    time_range_end: props.editingKey.time_range_end || '',
     is_active: props.editingKey.is_active,
     capabilities: { ...(props.editingKey.capabilities || {}) },
     auto_fetch_models: props.editingKey.auto_fetch_models ?? false,
@@ -728,6 +781,20 @@ async function handleSave() {
     return
   }
 
+  if (form.value.enable_time_window) {
+    if (!form.value.time_range_start || !form.value.time_range_end) {
+      showError('请完整填写开始时间和结束时间', '验证失败')
+      return
+    }
+    if (form.value.time_range_start === form.value.time_range_end) {
+      showError('开始时间和结束时间不能相同', '验证失败')
+      return
+    }
+  }
+
+  const timeRangeStart = form.value.enable_time_window ? form.value.time_range_start : null
+  const timeRangeEnd = form.value.enable_time_window ? form.value.time_range_end : null
+
   // 过滤出有效的能力配置（只包含值为 true 的）
   const activeCapabilities: Record<string, boolean> = {}
   for (const [key, value] of Object.entries(form.value.capabilities)) {
@@ -766,6 +833,8 @@ async function handleSave() {
         rpm_limit: form.value.rpm_limit,
         cache_ttl_minutes: form.value.cache_ttl_minutes,
         max_probe_interval_minutes: form.value.max_probe_interval_minutes,
+        time_range_start: timeRangeStart,
+        time_range_end: timeRangeEnd,
         note: form.value.note,
         is_active: form.value.is_active,
         capabilities: capabilitiesData,
@@ -797,6 +866,8 @@ async function handleSave() {
         rpm_limit: form.value.rpm_limit,
         cache_ttl_minutes: form.value.cache_ttl_minutes,
         max_probe_interval_minutes: form.value.max_probe_interval_minutes,
+        time_range_start: timeRangeStart,
+        time_range_end: timeRangeEnd,
         note: form.value.note,
         capabilities: capabilitiesData || undefined,
         auto_fetch_models: form.value.auto_fetch_models,
