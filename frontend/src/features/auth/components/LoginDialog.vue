@@ -7,11 +7,10 @@
     <div class="px-6 py-6 sm:px-8 sm:py-8">
       <!-- Logo 和标题 -->
       <div class="flex flex-col items-center text-center mb-8">
-        <img
-          src="/aether_adaptive.svg"
-          :alt="siteName"
-          class="h-16 w-16 mb-4"
-        >
+        <HeaderLogo
+          size="h-16 w-16 mb-4"
+          class-name="text-primary"
+        />
         <h2 class="text-2xl font-semibold text-foreground">
           登录到 {{ siteName }}
         </h2>
@@ -240,6 +239,7 @@ import { Dialog } from '@/components/ui'
 import Button from '@/components/ui/button.vue'
 import Input from '@/components/ui/input.vue'
 import Label from '@/components/ui/label.vue'
+import HeaderLogo from '@/components/HeaderLogo.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useToast } from '@/composables/useToast'
 import { useSiteInfo } from '@/composables/useSiteInfo'

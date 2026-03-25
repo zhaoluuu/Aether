@@ -7,11 +7,10 @@
       <!-- Logo 和标题 -->
       <div class="flex flex-col items-center text-center">
         <div class="mb-4 rounded-3xl border border-primary/30 dark:border-[#cc785c]/30 bg-primary/5 dark:bg-transparent p-4 shadow-inner shadow-white/40 dark:shadow-[#cc785c]/10">
-          <img
-            src="/aether_adaptive.svg"
-            alt="Logo"
-            class="h-16 w-16"
-          >
+          <HeaderLogo
+            size="h-16 w-16"
+            class-name="text-primary"
+          />
         </div>
         <h2 class="text-2xl font-semibold text-slate-900 dark:text-white">
           注册新账户
@@ -245,6 +244,7 @@ import { Dialog } from '@/components/ui'
 import Button from '@/components/ui/button.vue'
 import Input from '@/components/ui/input.vue'
 import Label from '@/components/ui/label.vue'
+import HeaderLogo from '@/components/HeaderLogo.vue'
 
 interface Props {
   open?: boolean

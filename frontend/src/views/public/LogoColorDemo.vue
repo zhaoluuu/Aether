@@ -28,7 +28,7 @@
           <!-- Logo preview -->
           <div class="flex items-center justify-center h-48 mb-4">
             <svg
-              viewBox="0 0 800 800"
+              :viewBox="viewBox"
               class="w-40 h-40"
               xmlns="http://www.w3.org/2000/svg"
             >
@@ -71,6 +71,7 @@
                 fill="none"
                 :stroke="scheme.primary"
                 stroke-width="3.5"
+                vector-effect="non-scaling-stroke"
                 stroke-linecap="round"
                 stroke-linejoin="round"
               />
@@ -218,10 +219,11 @@
 import { ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import AetherLineByLineLogo from '@/components/AetherLineByLineLogo.vue'
-import { AETHER_LINE_PATHS, AETHER_FULL_PATH } from '@/constants/logoPaths'
+import { AETHER_LINE_PATHS, AETHER_FULL_PATH, AETHER_SVG_VIEWBOX } from '@/constants/logoPaths'
 
 const linePaths = AETHER_LINE_PATHS
 const fullPath = AETHER_FULL_PATH
+const viewBox = AETHER_SVG_VIEWBOX
 
 const colorSchemes = [
   {

@@ -50,6 +50,7 @@
           fill="none"
           :stroke="currentColors.primary"
           :stroke-width="strokeWidth"
+          vector-effect="non-scaling-stroke"
           stroke-linecap="round"
           stroke-linejoin="round"
         />
@@ -71,11 +72,12 @@
           :key="`line-${index}`"
           :ref="(el) => setPathRef(el as SVGPathElement, index)"
           :d="path"
-          class="line-path"
+          :class="['line-path', { 'line-active': activeLineIndex === index }]"
           fill="none"
-          :stroke="currentColors.primary"
+          :stroke="getLineStroke(index)"
           :stroke-width="strokeWidth"
           :style="getLineStyle(index)"
+          vector-effect="non-scaling-stroke"
           stroke-linecap="round"
           stroke-linejoin="round"
         />
@@ -184,6 +186,7 @@ const lineDrawn = ref<boolean[]>(new Array(LINE_COUNT).fill(false))
 const isFilled = ref(false)
 const currentPhase = ref<AnimationPhase>('idle')
 const isAnimating = ref(false)
+const activeLineIndex = ref<number | null>(null)
 
 // Timer cleanup
 let animationAborted = false
@@ -216,6 +219,10 @@ const fillStyle = computed(() => ({
   transition: `opacity ${props.fillDuration}ms ease-in-out`
 }))
 
+const segmentDuration = computed(() => Math.max(180, Math.round(props.strokeDuration / Math.max(LINE_COUNT, 1))))
+const segmentPause = computed(() => Math.max(props.lineDelay, Math.round(segmentDuration.value * 0.72)))
+const erasePause = computed(() => Math.max(50, Math.round(segmentDuration.value * 0.45)))
+
 // Helper functions
 function adjustColor(hex: string, amount: number): string {
   const num = parseInt(hex.replace('#', ''), 16)
@@ -246,18 +253,35 @@ const getLineStyle = (index: number) => {
   const pathLength = pathLengths.value[index]
   const isDrawn = lineDrawn.value[index]
   const phase = currentPhase.value
+  const isActive = activeLineIndex.value === index
 
   // Only enable transition during actual draw/erase phases
   let transition = 'none'
   if (phase === 'drawOutline' || phase === 'eraseOutline') {
-    transition = `stroke-dashoffset ${props.strokeDuration}ms cubic-bezier(0.4, 0, 0.2, 1)`
+    transition = [
+      `stroke-dashoffset ${segmentDuration.value}ms cubic-bezier(0.4, 0, 0.2, 1)`,
+      'stroke 220ms ease',
+      'filter 220ms ease',
+      'opacity 220ms ease'
+    ].join(', ')
   }
 
   return {
     strokeDasharray: pathLength,
     strokeDashoffset: isDrawn ? 0 : pathLength,
+    opacity: isDrawn || isActive ? 1 : 0.82,
+    filter: isActive
+      ? 'drop-shadow(0 0 8px rgba(255,255,255,0.28)) drop-shadow(0 0 16px rgba(204,120,92,0.42))'
+      : 'none',
     transition
   }
+}
+
+const getLineStroke = (index: number) => {
+  if (activeLineIndex.value === index) {
+    return metallicColors.value.highlight
+  }
+  return currentColors.value.primary
 }
 
 // Abortable wait
@@ -301,6 +325,7 @@ const startAnimation = async () => {
     lineDrawn.value = new Array(LINE_COUNT).fill(false)
     isFilled.value = false
     currentPhase.value = 'idle'
+    activeLineIndex.value = null
 
     await nextTick()
     calculatePathLengths()
@@ -311,10 +336,12 @@ const startAnimation = async () => {
     emit('phaseChange', 'drawOutline')
 
     for (let i = 0; i < LINE_COUNT; i++) {
+      activeLineIndex.value = i
       lineDrawn.value[i] = true
-      if (i < LINE_COUNT - 1) await wait(props.lineDelay)
+      await wait(segmentPause.value)
     }
-    await wait(props.strokeDuration)
+    activeLineIndex.value = null
+    await wait(segmentDuration.value)
 
     // Phase 2: Fill fade in
     currentPhase.value = 'fillFadeIn'
@@ -336,11 +363,13 @@ const startAnimation = async () => {
     currentPhase.value = 'eraseOutline'
     emit('phaseChange', 'eraseOutline')
 
-    for (let i = 0; i < LINE_COUNT; i++) {
+    for (let i = LINE_COUNT - 1; i >= 0; i--) {
+      activeLineIndex.value = i
       lineDrawn.value[i] = false
-      if (i < LINE_COUNT - 1) await wait(props.lineDelay)
+      await wait(erasePause.value)
     }
-    await wait(props.strokeDuration)
+    activeLineIndex.value = null
+    await wait(Math.max(120, Math.round(segmentDuration.value * 0.8)))
 
     currentPhase.value = 'idle'
     isAnimating.value = false
@@ -367,6 +396,7 @@ const reset = () => {
   isFilled.value = false
   currentPhase.value = 'idle'
   isAnimating.value = false
+  activeLineIndex.value = null
 }
 
 const stop = () => {
@@ -421,6 +451,10 @@ watch(() => props.autoStart, (newVal) => {
 
 .line-path {
   will-change: stroke-dashoffset;
+}
+
+.line-active {
+  mix-blend-mode: screen;
 }
 
 .fill-path {
