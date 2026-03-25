@@ -291,7 +291,7 @@ const shadows = computed(() => {
           </div>
         </div>
 
-        <!-- AETHER GATEWAY: top=78, h=240, w=600, left=80 -->
+        <!-- HOOK.RS GATEWAY: top=78, h=240, w=600, left=80 -->
         <div
           class="absolute left-[80px] top-[78px] w-[600px] h-[240px] rounded-[24px] z-20"
           :style="{ backgroundColor: colors.cardBg, border: `1px solid ${colors.coreBorder}`, boxShadow: shadows.lg }"
@@ -300,8 +300,8 @@ const shadows = computed(() => {
             class="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 flex flex-col items-center gap-px px-[4px] py-1.5 rounded-full font-sans text-[7px] font-black leading-none"
             :style="{ backgroundColor: colors.cardBg, color: colors.brand }"
           >
-            <span>A</span><span>E</span><span>T</span><span>H</span><span>E</span><span>R</span>
-          </div>
+            <span>H</span><span>O</span><span>O</span><span>K</span><span>.</span><span>R</span><span>S</span>
+        </div>
         </div>
 
         <!-- Dashed box: abs positioned in outer 760x420 container -->

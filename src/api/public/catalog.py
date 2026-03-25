@@ -78,7 +78,7 @@ def _fetch_recent_public_health_attempts_for_api_format(
 def get_site_info(db: Session = Depends(get_db)) -> dict[str, str]:
     """获取站点基本信息（公开接口，无需认证）"""
     return {
-        "site_name": SystemConfigService.get_config(db, "site_name", default="Aether"),
+        "site_name": SystemConfigService.get_config(db, "site_name", default="Hook.Rs"),
         "site_subtitle": SystemConfigService.get_config(db, "site_subtitle", default="AI Gateway"),
     }
 

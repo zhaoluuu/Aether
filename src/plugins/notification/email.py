@@ -44,14 +44,14 @@ class EmailNotificationPlugin(NotificationPlugin):
 
         # 邮件配置
         self.from_email = config.get("from_email") if config else None
-        self.from_name = config.get("from_name", "Aether") if config else "Aether"
+        self.from_name = config.get("from_name", "Hook.Rs") if config else "Hook.Rs"
         self.to_emails = config.get("to_emails", []) if config else []
         self.cc_emails = config.get("cc_emails", []) if config else []
         self.bcc_emails = config.get("bcc_emails", []) if config else []
 
         # 模板配置
         self.use_html = config.get("use_html", True) if config else True
-        self.subject_prefix = config.get("subject_prefix", "[Aether]") if config else "[Aether]"
+        self.subject_prefix = config.get("subject_prefix", "[Hook.Rs]") if config else "[Hook.Rs]"
 
         # 缓冲配置
         self._buffer: list[Notification] = []
@@ -138,7 +138,7 @@ class EmailNotificationPlugin(NotificationPlugin):
             </style>
         </head>
         <body>
-            <h2>Notifications from Aether</h2>
+            <h2>Notifications from Hook.Rs</h2>
         """
 
         for notification in notifications:
@@ -169,7 +169,7 @@ class EmailNotificationPlugin(NotificationPlugin):
 
     def _format_text_email(self, notifications: list[Notification]) -> str:
         """格式化纯文本邮件"""
-        lines = ["Notifications from Aether", "=" * 50, ""]
+        lines = ["Notifications from Hook.Rs", "=" * 50, ""]
 
         for notification in notifications:
             lines.append(f"[{notification.level.value.upper()}] {notification.title}")

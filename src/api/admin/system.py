@@ -2631,7 +2631,7 @@ class AdminTestSmtpAdapter(AdminApiAdapter):
             "smtp_from_email": payload.get("smtp_from_email")
             or _system_config_service().get_config(db, "smtp_from_email"),
             "smtp_from_name": payload.get("smtp_from_name")
-            or _system_config_service().get_config(db, "smtp_from_name", default="Aether"),
+            or _system_config_service().get_config(db, "smtp_from_name", default="Hook.Rs"),
         }
 
         # 验证必要配置
@@ -2796,7 +2796,7 @@ class AdminPreviewEmailTemplateAdapter(AdminApiAdapter):
         preview_variables = {}
         default_values = {
             "app_name": _system_config_service().get_config(db, "email_app_name")
-            or _system_config_service().get_config(db, "smtp_from_name", default="Aether"),
+            or _system_config_service().get_config(db, "smtp_from_name", default="Hook.Rs"),
             "code": "123456",
             "expire_minutes": "30",
             "email": "example@example.com",

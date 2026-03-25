@@ -3145,7 +3145,7 @@ async def _register_sso_oidc_client(
     """注册 AWS SSO OIDC 客户端 (public, device_code grant)。"""
     url = f"https://oidc.{region}.amazonaws.com/client/register"
     body = {
-        "clientName": "Aether Gateway",
+        "clientName": "Hook.Rs Gateway",
         "clientType": "public",
         "scopes": _KIRO_SSO_SCOPES,
         "grantTypes": [

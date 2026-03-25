@@ -19,8 +19,8 @@ const copiedStep = ref<string | null>(null)
 
 const productionSteps = [
   {
-    title: '克隆代码',
-    code: 'git clone https://github.com/fawney19/Aether.git\ncd Aether',
+    title: '进入项目目录',
+    code: 'cd /opt/aether/current',
     icon: Code
   },
   {
@@ -46,8 +46,8 @@ const productionSteps = [
 
 const localBuildSteps = [
   {
-    title: '克隆代码',
-    code: 'git clone https://github.com/fawney19/Aether.git\ncd Aether',
+    title: '进入项目目录',
+    code: 'cd /opt/aether/current',
     icon: Code
   },
   {
@@ -107,13 +107,13 @@ function copyStep(stepId: string, code: string) {
     <div class="space-y-4">
       <div class="inline-flex items-center gap-1.5 rounded-full bg-[#cc785c]/10 dark:bg-[#cc785c]/20 border border-[#cc785c]/20 dark:border-[#cc785c]/40 px-3 py-1 text-xs font-medium text-[#cc785c] dark:text-[#d4a27f]">
         <Zap class="h-3 w-3" />
-        Aether 官方文档
+        Hook.Rs 官方文档
       </div>
       <h1 class="text-3xl font-bold text-[#262624] dark:text-[#f1ead8]">
         快速开始
       </h1>
       <p class="text-base text-[#666663] dark:text-[#a3a094] max-w-2xl">
-        本文档将引导您完成 Aether 的项目部署、配置以及反向代理等高级特性的使用。
+        本文档将引导您完成 Hook.Rs 的项目部署、配置以及反向代理等高级特性的使用。
       </p>
     </div>
 
@@ -471,21 +471,13 @@ function copyStep(stepId: string, code: string) {
 
       <div class="space-y-6 mt-6">
         <div>
-          <h3>1. Aether-Proxy</h3>
+          <h3>1. Hook.Rs-Proxy</h3>
           <p>Rust实现, 超小资源占有, 适合性能低的VPS直接使用。</p>
-          <a
-            href="https://github.com/fawney19/Aether/tree/master/aether-proxy"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="text-[#cc785c] dark:text-[#d4a27f] hover:underline mt-2 inline-block"
-          >
-            GitHub 仓库 >
-          </a>
         </div>
 
         <div>
           <h3>2. 代理节点</h3>
-          <p>在模块管理中，开启代理模块后可以添加和使用代理功能，包括手动添加和 Aether-Proxy 自动连接。</p>
+          <p>在模块管理中，开启代理模块后可以添加和使用代理功能，包括手动添加和 Hook.Rs-Proxy 自动连接。</p>
         </div>
 
         <div>

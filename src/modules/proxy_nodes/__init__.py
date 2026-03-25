@@ -2,7 +2,7 @@
 代理节点模块
 
 提供海外 VPS 代理节点的注册、心跳、管理功能。
-aether-proxy 部署在海外 VPS 上，通过 WebSocket 隧道连接 Aether 转发 API 请求。
+aether-proxy 部署在海外 VPS 上，通过 WebSocket 隧道连接 Hook.Rs 转发 API 请求。
 """
 
 from __future__ import annotations
@@ -165,7 +165,7 @@ proxy_nodes_module = ModuleDefinition(
     metadata=ModuleMetadata(
         name="proxy_nodes",
         display_name="代理节点",
-        description="添加Http/Socket代理节点, 或使用Aether-Proxy自动连接代理节点.",
+        description="添加Http/Socket代理节点, 或使用Hook.Rs-Proxy自动连接代理节点.",
         category=ModuleCategory.INTEGRATION,
         env_key="PROXY_NODES_AVAILABLE",
         default_available=True,

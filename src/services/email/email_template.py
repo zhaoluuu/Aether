@@ -326,7 +326,7 @@ class EmailTemplate:
         Returns:
             渲染后的 HTML
         """
-        app_name = kwargs.get("app_name", "Aether")
+        app_name = kwargs.get("app_name", "Hook.Rs")
         email = kwargs.get("email", "")
 
         # 获取模板
@@ -380,7 +380,7 @@ class EmailTemplate:
         Returns:
             渲染后的 HTML
         """
-        app_name = kwargs.get("app_name", "Aether")
+        app_name = kwargs.get("app_name", "Hook.Rs")
         email = kwargs.get("email", "")
 
         # 获取模板

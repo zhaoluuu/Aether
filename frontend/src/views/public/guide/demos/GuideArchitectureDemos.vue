@@ -78,10 +78,10 @@ const demos = [
           </div>
         </div>
 
-        <!-- Aether Core -->
+        <!-- Hook.Rs Core -->
         <div class="w-full max-w-3xl h-48 bg-[#cc785c]/10 border-2 border-[#cc785c] rounded-2xl flex flex-col items-center justify-center">
           <h2 class="text-3xl font-black tracking-widest text-[#cc785c] mb-2">
-            AETHER GATEWAY
+            HOOK.RS GATEWAY
           </h2>
           <div class="text-sm font-medium w-full px-12 text-center text-[#262624] dark:text-[#f1ead8]">
             <span class="px-3">多源聚合</span>|<span class="px-3">鉴权 / 配额管控</span>|<span class="px-3">负载均衡 / 故障转移</span>|<span class="px-3">基于亲和性路由</span>
@@ -144,10 +144,10 @@ const demos = [
           Layout Variant: Central Star/Hub
         </div>
         
-        <!-- Aether Core / Center -->
+        <!-- Hook.Rs Core / Center -->
         <div class="w-72 h-72 rounded-full border-4 border-[#cc785c] bg-[#cc785c]/5 flex flex-col items-center justify-center z-10 relative">
           <h2 class="text-xl font-black text-[#cc785c] text-center px-4 leading-tight">
-            AETHER<br>GATEWAY
+            HOOK.RS<br>GATEWAY
           </h2>
           <div class="mt-4 text-xs font-mono text-center leading-relaxed">
             Auth<br>Quota<br>Load Balance
@@ -231,14 +231,14 @@ const demos = [
             <div class="absolute bottom-[-60px] left-1/2 w-2 h-16 bg-[#cc785c] opacity-50 blur-sm rounded-full transform -rotate-x-90 translate-y-8" />
           </div>
 
-          <!-- Layer 2: Aether Gateway Core (Middle) -->
+          <!-- Layer 2: Hook.Rs Gateway Core (Middle) -->
           <div class="absolute inset-x-0 top-[200px] h-48 bg-[#cc785c]/20 backdrop-blur-xl border-2 border-[#cc785c] rounded-lg shadow-2xl flex items-center justify-center relative transform translate-z-[60px]">
             <h3 class="text-sm font-bold text-[#cc785c] absolute top-4 left-4 tracking-widest">
-              LAYER 2: AETHER GATEWAY (CORE)
+              LAYER 2: HOOK.RS GATEWAY (CORE)
             </h3>
             <div class="text-center">
               <h2 class="text-3xl font-black text-[#cc785c] tracking-[0.3em] mb-4">
-                AETHER
+                HOOK.RS
               </h2>
               <div class="flex gap-2">
                 <span class="px-2 py-1 text-[10px] bg-white/50 dark:bg-black/50 rounded ring-1 ring-[#cc785c]">Auth</span>

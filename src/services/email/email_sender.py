@@ -65,7 +65,7 @@ class EmailSenderService:
             "smtp_use_ssl": SystemConfigService.get_config(db, "smtp_use_ssl", default=False),
             "smtp_from_email": SystemConfigService.get_config(db, "smtp_from_email"),
             "smtp_from_name": SystemConfigService.get_config(
-                db, "smtp_from_name", default="Aether"
+                db, "smtp_from_name", default="Hook.Rs"
             ),
         }
         return config
@@ -135,7 +135,7 @@ class EmailSenderService:
         if not app_name:
             app_name = SystemConfigService.get_config(db, "site_name", default=None)
         if not app_name:
-            app_name = SystemConfigService.get_config(db, "smtp_from_name", default="Aether")
+            app_name = SystemConfigService.get_config(db, "smtp_from_name", default="Hook.Rs")
 
         html_body = EmailTemplate.get_verification_code_html(
             code=code, expire_minutes=expire_minutes, db=db, app_name=app_name, email=to_email

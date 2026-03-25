@@ -88,7 +88,7 @@ class SystemConfigService:
     DEFAULT_CONFIGS = {
         # 站点信息
         "site_name": {
-            "value": "Aether",
+            "value": "Hook.Rs",
             "description": "站点名称，显示在页面标题、导航栏、登录页面和邮件中",
         },
         "site_subtitle": {
@@ -240,7 +240,7 @@ class SystemConfigService:
             "description": "发件人邮箱地址",
         },
         "smtp_from_name": {
-            "value": "Aether",
+            "value": "Hook.Rs",
             "description": "发件人名称",
         },
         # OAuth Token 刷新配置

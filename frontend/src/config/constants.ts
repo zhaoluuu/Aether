@@ -4,7 +4,7 @@
 
 // 应用配置
 export const APP_CONFIG = {
-  NAME: 'Aether',
+  NAME: 'Hook.Rs',
   VERSION: '9.1.0',
   DESCRIPTION: 'Claude API 代理服务管理平台',
 } as const

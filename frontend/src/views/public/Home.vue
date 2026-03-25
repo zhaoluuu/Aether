@@ -40,7 +40,7 @@
           </div>
         </div>
 
-        <!-- Right: Login + Icons -->
+        <!-- Right: Login + Theme -->
         <div class="flex items-center gap-2">
           <RouterLink
             v-if="authStore.isAuthenticated"
@@ -74,22 +74,13 @@
               class="h-3.5 w-3.5"
             />
           </button>
-          <a
-            href="https://github.com/fawney19/Aether"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition"
-            title="GitHub 仓库"
-          >
-            <GithubIcon class="h-3.5 w-3.5" />
-          </a>
         </div>
       </div>
 
       <!-- Desktop layout (>= md): Centered nav with balanced spacing -->
       <div class="h-16 hidden md:flex items-center justify-between px-8">
-        <!-- Left spacer for balance (matches right icons width) -->
-        <div class="w-[76px] shrink-0" />
+        <!-- Left spacer for balance (matches right controls width) -->
+        <div class="w-10 shrink-0" />
 
         <!-- Center: Logo + Nav + Login Button -->
         <div class="flex items-center">
@@ -165,7 +156,7 @@
           </button>
         </div>
 
-        <!-- Right: Theme Toggle + GitHub Icons -->
+        <!-- Right: Theme Toggle -->
         <div class="flex items-center gap-1 shrink-0">
           <button
             class="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition"
@@ -185,15 +176,6 @@
               class="h-4 w-4"
             />
           </button>
-          <a
-            href="https://github.com/fawney19/Aether"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition"
-            title="GitHub 仓库"
-          >
-            <GithubIcon class="h-4 w-4" />
-          </a>
         </div>
       </div>
     </header>
@@ -465,7 +447,6 @@ import {
   SunMoon,
   Terminal
 } from 'lucide-vue-next'
-import GithubIcon from '@/components/icons/GithubIcon.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useDarkMode } from '@/composables/useDarkMode'
 import { useClipboard } from '@/composables/useClipboard'
