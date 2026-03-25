@@ -36,6 +36,60 @@ def _normalize_plan_type(value: Any) -> str | None:
     return normalized or None
 
 
+def _extract_oauth_context(key: ProviderAPIKey, auth_type: str) -> tuple[str | None, str | None]:
+    """Read plan/account context from the latest persisted auth_config."""
+    oauth_plan_type = None
+    oauth_account_id = None
+    if auth_type == "oauth" and key.auth_config:
+        try:
+            decrypted_config = crypto_service.decrypt(key.auth_config)
+            auth_config_data = json.loads(decrypted_config)
+            if isinstance(auth_config_data, dict):
+                oauth_plan_type = _normalize_plan_type(auth_config_data.get("plan_type"))
+                raw_account_id = auth_config_data.get("account_id")
+                if isinstance(raw_account_id, str):
+                    oauth_account_id = raw_account_id.strip() or None
+        except Exception:
+            pass
+    return oauth_plan_type, oauth_account_id
+
+
+def _build_usage_headers(
+    *,
+    key: ProviderAPIKey,
+    auth_info: Any,
+    auth_type: str,
+) -> tuple[dict[str, Any], str | None, str | None]:
+    headers: dict[str, Any] = {
+        "Accept": "application/json",
+    }
+    if auth_info:
+        headers[auth_info.auth_header] = auth_info.auth_value
+    else:
+        decrypted_key = crypto_service.decrypt(key.api_key)
+        headers["Authorization"] = f"Bearer {decrypted_key}"
+
+    oauth_plan_type, oauth_account_id = _extract_oauth_context(key, auth_type)
+    if oauth_account_id and oauth_plan_type != "free":
+        headers["chatgpt-account-id"] = oauth_account_id
+
+    return headers, oauth_plan_type, oauth_account_id
+
+
+async def _fetch_usage_response(
+    *,
+    effective_proxy: Any,
+    codex_wham_usage_url: str,
+    headers: dict[str, Any],
+) -> httpx.Response:
+    from src.services.proxy_node.resolver import build_proxy_client_kwargs
+
+    async with httpx.AsyncClient(
+        **build_proxy_client_kwargs(effective_proxy, timeout=30.0)
+    ) as client:
+        return await client.get(codex_wham_usage_url, headers=headers)
+
+
 def _build_quota_exhausted_fallback_metadata(plan_type: str | None) -> dict[str, Any]:
     """Build conservative Codex quota metadata when wham/usage returns 402."""
     normalized_plan = _normalize_plan_type(plan_type)
@@ -168,43 +222,16 @@ async def refresh_codex_key_quota(
             "message": "找不到有效的 openai:cli 端点",
         }
 
-    # 获取认证信息（用于刷新 OAuth token）
-    auth_info = await get_provider_auth(endpoint, key)
-
-    # 构建请求头
-    headers: dict[str, Any] = {
-        "Accept": "application/json",
-    }
-    if auth_info:
-        headers[auth_info.auth_header] = auth_info.auth_value
-    else:
-        # 标准 API Key
-        decrypted_key = crypto_service.decrypt(key.api_key)
-        headers["Authorization"] = f"Bearer {decrypted_key}"
-
-    # 从 auth_config 中解密获取 plan_type 和 account_id
-    oauth_plan_type = None
-    oauth_account_id = None
     auth_type = normalize_auth_type(getattr(key, "auth_type", "api_key"))
-    if auth_type == "oauth" and key.auth_config:
-        try:
-            decrypted_config = crypto_service.decrypt(key.auth_config)
-            auth_config_data = json.loads(decrypted_config)
-            if isinstance(auth_config_data, dict):
-                oauth_plan_type = _normalize_plan_type(auth_config_data.get("plan_type"))
-                raw_account_id = auth_config_data.get("account_id")
-                if isinstance(raw_account_id, str):
-                    oauth_account_id = raw_account_id.strip() or None
-        except Exception:
-            pass
-
-    # 如果有 account_id 且不是 free 账号（plan_type 缺失时默认携带，增强兼容性）
-    if oauth_account_id and oauth_plan_type != "free":
-        headers["chatgpt-account-id"] = oauth_account_id
+    auth_info = await get_provider_auth(endpoint, key)
+    headers, oauth_plan_type, _oauth_account_id = _build_usage_headers(
+        key=key,
+        auth_info=auth_info,
+        auth_type=auth_type,
+    )
 
     # 解析代理配置（key 级别 > provider 级别 > 系统默认）
     from src.services.proxy_node.resolver import (
-        build_proxy_client_kwargs,
         resolve_effective_proxy,
     )
 
@@ -213,11 +240,25 @@ async def refresh_codex_key_quota(
         getattr(key, "proxy", None),
     )
 
-    # 使用 wham/usage API 获取限额信息
-    async with httpx.AsyncClient(
-        **build_proxy_client_kwargs(effective_proxy, timeout=30.0)
-    ) as client:
-        response = await client.get(codex_wham_usage_url, headers=headers)
+    response = await _fetch_usage_response(
+        effective_proxy=effective_proxy,
+        codex_wham_usage_url=codex_wham_usage_url,
+        headers=headers,
+    )
+
+    # Token 可能早于 expires_at 被上游吊销/轮换；对 OAuth key 进行一次恢复性 refresh 并重试。
+    if response.status_code == 401 and auth_type == "oauth":
+        refreshed_auth = await get_provider_auth(endpoint, key, force_refresh=True)
+        retry_headers, oauth_plan_type, _oauth_account_id = _build_usage_headers(
+            key=key,
+            auth_info=refreshed_auth,
+            auth_type=auth_type,
+        )
+        response = await _fetch_usage_response(
+            effective_proxy=effective_proxy,
+            codex_wham_usage_url=codex_wham_usage_url,
+            headers=retry_headers,
+        )
 
     if response.status_code != 200:
         status_code = int(response.status_code)

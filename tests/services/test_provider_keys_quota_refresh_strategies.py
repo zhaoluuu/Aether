@@ -55,11 +55,15 @@ class _FakeResponse:
 
 
 class _FakeAsyncClient:
-    def __init__(self, response: _FakeResponse, **kwargs: Any) -> None:
-        self._response = response
+    def __init__(self, response: _FakeResponse | list[_FakeResponse], **kwargs: Any) -> None:
+        if isinstance(response, list):
+            self._responses = response
+        else:
+            self._responses = [response]
         self.kwargs = kwargs
         self.last_url: str | None = None
         self.last_headers: dict[str, str] | None = None
+        self.request_count = 0
 
     async def __aenter__(self) -> "_FakeAsyncClient":
         return self
@@ -76,7 +80,10 @@ class _FakeAsyncClient:
     async def get(self, url: str, headers: dict[str, str]) -> _FakeResponse:
         self.last_url = url
         self.last_headers = headers
-        return self._response
+        self.request_count += 1
+        if len(self._responses) > 1:
+            return self._responses.pop(0)
+        return self._responses[0]
 
 
 def _install_module(monkeypatch: pytest.MonkeyPatch, name: str, attrs: dict[str, Any]) -> None:
@@ -196,6 +203,162 @@ async def test_codex_refresher_http_401_marks_auth_invalid_without_disabling_key
     assert result["auto_disabled"] is False
     assert metadata_updates == {}
     assert str(state_updates["k1"]["oauth_invalid_reason"]).startswith("[OAUTH_EXPIRED]")
+
+
+@pytest.mark.asyncio
+async def test_codex_refresher_http_401_oauth_force_refreshes_and_recovers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.services.provider_keys.quota_refresh import codex_refresher as module
+
+    key = SimpleNamespace(
+        id="k1",
+        name="K1",
+        api_key="enc-key",
+        auth_type="oauth",
+        auth_config="enc-config",
+        proxy=None,
+        oauth_invalid_at="old-invalid-at",
+        oauth_invalid_reason="[OAUTH_EXPIRED] token invalidated",
+    )
+    provider = SimpleNamespace(proxy=None)
+    endpoint = SimpleNamespace()
+    metadata_updates: dict[str, dict[str, Any]] = {}
+    state_updates: dict[str, dict[str, Any]] = {}
+    auth_calls: list[bool] = []
+
+    async def _fake_auth_info(_endpoint: Any, _key: Any, *, force_refresh: bool = False) -> Any:
+        auth_calls.append(force_refresh)
+        if force_refresh:
+            key.api_key = "enc-key-refreshed"
+        return SimpleNamespace(auth_header="Authorization", auth_value="Bearer refreshed-token")
+
+    _install_module(
+        monkeypatch,
+        "src.services.proxy_node.resolver",
+        {
+            "resolve_effective_proxy": lambda provider_proxy, key_proxy: None,
+            "build_proxy_client_kwargs": lambda proxy, timeout: {"timeout": timeout},
+        },
+    )
+    monkeypatch.setattr(module, "get_provider_auth", _fake_auth_info)
+    monkeypatch.setattr(
+        module.crypto_service,
+        "decrypt",
+        lambda value: (
+            "sk-old"
+            if value == "enc-key"
+            else (
+                "sk-new"
+                if value == "enc-key-refreshed"
+                else json.dumps({"plan_type": "team", "account_id": "acc-1"})
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "parse_codex_wham_usage_response",
+        lambda _data: {"plan_type": "team", "used_percent": 12.5},
+    )
+    response = [
+        _FakeResponse(status_code=401, payload={"error": {"message": "Authentication token has been invalidated."}}),
+        _FakeResponse(status_code=200, payload={"ok": True}),
+    ]
+    monkeypatch.setattr(
+        module.httpx,
+        "AsyncClient",
+        lambda **kwargs: _FakeAsyncClient(response, **kwargs),
+    )
+
+    result = await refresh_codex_key_quota(
+        db=cast(Any, _FakeDB()),
+        provider=cast(Any, provider),
+        key=cast(Any, key),
+        endpoint=cast(Any, endpoint),
+        codex_wham_usage_url="https://example.test",
+        metadata_updates=metadata_updates,
+        state_updates=state_updates,
+    )
+
+    assert result["status"] == "success"
+    assert metadata_updates["k1"]["codex"]["plan_type"] == "team"
+    assert state_updates["k1"] == {"oauth_invalid_at": None, "oauth_invalid_reason": None}
+    assert auth_calls == [False, True]
+
+
+@pytest.mark.asyncio
+async def test_codex_refresher_http_401_oauth_retry_still_marks_deactivated_account(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.services.provider_keys.quota_refresh import codex_refresher as module
+
+    key = SimpleNamespace(
+        id="k1",
+        name="K1",
+        api_key="enc-key",
+        auth_type="oauth",
+        auth_config="enc-config",
+        proxy=None,
+        oauth_invalid_at=None,
+        oauth_invalid_reason=None,
+    )
+    provider = SimpleNamespace(proxy=None)
+    endpoint = SimpleNamespace()
+    metadata_updates: dict[str, dict[str, Any]] = {}
+    state_updates: dict[str, dict[str, Any]] = {}
+    auth_calls: list[bool] = []
+
+    async def _fake_auth_info(_endpoint: Any, _key: Any, *, force_refresh: bool = False) -> Any:
+        auth_calls.append(force_refresh)
+        return SimpleNamespace(auth_header="Authorization", auth_value="Bearer refreshed-token")
+
+    _install_module(
+        monkeypatch,
+        "src.services.proxy_node.resolver",
+        {
+            "resolve_effective_proxy": lambda provider_proxy, key_proxy: None,
+            "build_proxy_client_kwargs": lambda proxy, timeout: {"timeout": timeout},
+        },
+    )
+    monkeypatch.setattr(module, "get_provider_auth", _fake_auth_info)
+    monkeypatch.setattr(
+        module.crypto_service,
+        "decrypt",
+        lambda value: (
+            "sk-test" if value == "enc-key" else json.dumps({"plan_type": "team", "account_id": "acc-1"})
+        ),
+    )
+    response = [
+        _FakeResponse(status_code=401, payload={"error": {"message": "Authentication token has been invalidated."}}),
+        _FakeResponse(
+            status_code=401,
+            payload={
+                "error": {
+                    "message": "Your OpenAI account has been deactivated, please check your email for more information."
+                }
+            },
+        ),
+    ]
+    monkeypatch.setattr(
+        module.httpx,
+        "AsyncClient",
+        lambda **kwargs: _FakeAsyncClient(response, **kwargs),
+    )
+
+    result = await refresh_codex_key_quota(
+        db=cast(Any, _FakeDB()),
+        provider=cast(Any, provider),
+        key=cast(Any, key),
+        endpoint=cast(Any, endpoint),
+        codex_wham_usage_url="https://example.test",
+        metadata_updates=metadata_updates,
+        state_updates=state_updates,
+    )
+
+    assert result["status"] == "auth_invalid"
+    assert result["status_code"] == 401
+    assert str(state_updates["k1"]["oauth_invalid_reason"]).startswith("[ACCOUNT_BLOCK]")
+    assert auth_calls == [False, True]
 
 
 @pytest.mark.asyncio

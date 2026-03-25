@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -21,37 +22,95 @@ from src.services.provider_keys.quota_refresh.kiro_refresher import refresh_kiro
 
 
 def _provider_with_endpoints(*endpoints: tuple[str, bool]) -> SimpleNamespace:
-    eps = [SimpleNamespace(api_format=fmt, is_active=active) for fmt, active in endpoints]
+    eps = [
+        SimpleNamespace(provider_id="p1", api_format=fmt, is_active=active)
+        for fmt, active in endpoints
+    ]
     return SimpleNamespace(endpoints=eps)
 
 
 class _FakeQuery:
     def __init__(
         self,
-        *,
-        first_result: Any = None,
-        all_result: list[Any] | None = None,
+        items: Sequence[Any] | None = None,
     ) -> None:
-        self._first_result = first_result
-        self._all_result = all_result or []
+        self._items = list(items or [])
 
     def options(self, *args: Any, **kwargs: Any) -> _FakeQuery:
         return self
 
     def filter(self, *args: Any, **kwargs: Any) -> _FakeQuery:
-        return self
+        items = self._items
+        for expr in args:
+            items = [item for item in items if _matches_expression(item, expr)]
+        return _FakeQuery(items)
 
     def first(self) -> Any:
-        return self._first_result
+        return self._items[0] if self._items else None
 
     def all(self) -> list[Any]:
-        return self._all_result
+        return list(self._items)
+
+
+def _expression_operator_name(expr: Any) -> str:
+    operator = getattr(expr, "operator", None)
+    return getattr(operator, "__name__", "")
+
+
+def _bind_value(node: Any) -> Any:
+    if hasattr(node, "value"):
+        return node.value
+    return None
+
+
+def _matches_binary_expression(item: Any, expr: Any) -> bool:
+    left_key = getattr(getattr(expr, "left", None), "key", None)
+    operator_name = _expression_operator_name(expr)
+    current_value = getattr(item, left_key, None)
+
+    if operator_name == "eq":
+        return current_value == _bind_value(getattr(expr, "right", None))
+    if operator_name == "is_":
+        return current_value is (str(getattr(expr, "right", "")).lower() == "true")
+    if operator_name == "in_op":
+        expected = _bind_value(getattr(expr, "right", None)) or []
+        return current_value in expected
+    if operator_name == "startswith_op":
+        prefix = _bind_value(getattr(expr, "right", None)) or ""
+        return isinstance(current_value, str) and current_value.startswith(prefix)
+
+    raise AssertionError(f"unsupported binary expression: {expr}")
+
+
+def _matches_expression(item: Any, expr: Any) -> bool:
+    if hasattr(expr, "element"):
+        return _matches_expression(item, expr.element)
+
+    clauses = getattr(expr, "clauses", None)
+    if clauses is not None:
+        operator_name = _expression_operator_name(expr)
+        if operator_name == "or_":
+            return any(_matches_expression(item, clause) for clause in clauses)
+        return all(_matches_expression(item, clause) for clause in clauses)
+
+    left = getattr(expr, "left", None)
+    if left is not None:
+        return _matches_binary_expression(item, expr)
+
+    raise AssertionError(f"unsupported expression: {expr!r}")
 
 
 class _FakeDB:
-    def __init__(self, *, provider: Any, keys: list[SimpleNamespace]) -> None:
+    def __init__(
+        self,
+        *,
+        provider: Any,
+        keys: list[SimpleNamespace],
+        endpoints: list[SimpleNamespace] | None = None,
+    ) -> None:
         self._provider = provider
         self._keys = keys
+        self._endpoints = endpoints if endpoints is not None else list(getattr(provider, "endpoints", []))
         self.added: list[object] = []
         self.deleted: list[object] = []
         self.commit_count = 0
@@ -59,9 +118,11 @@ class _FakeDB:
     def query(self, model: Any) -> _FakeQuery:
         model_name = getattr(model, "__name__", "")
         if model_name == "Provider":
-            return _FakeQuery(first_result=self._provider)
+            return _FakeQuery([] if self._provider is None else [self._provider])
         if model_name == "ProviderAPIKey":
-            return _FakeQuery(all_result=self._keys)
+            return _FakeQuery(self._keys)
+        if model_name == "ProviderEndpoint":
+            return _FakeQuery(self._endpoints)
         raise AssertionError(f"unexpected query model: {model}")
 
     def add(self, obj: object) -> None:
@@ -76,48 +137,65 @@ class _FakeDB:
 
 def test_select_refresh_endpoint_codex() -> None:
     provider = _provider_with_endpoints(("openai:chat", True), ("openai:cli", True))
-    endpoint = _select_refresh_endpoint(cast(Any, provider), ProviderType.CODEX)
+    db = _FakeDB(provider=None, keys=[], endpoints=provider.endpoints)
+    endpoint = _select_refresh_endpoint(cast(Any, db), provider_id="p1", provider_type=ProviderType.CODEX)
     assert endpoint is not None
     assert endpoint.api_format == "openai:cli"
 
 
-def test_select_refresh_endpoint_codex_normalized_api_format() -> None:
+def test_select_refresh_endpoint_codex_requires_exact_api_format() -> None:
     provider = _provider_with_endpoints(("openai:chat", True), (" OpenAI:CLI ", True))
-    endpoint = _select_refresh_endpoint(cast(Any, provider), ProviderType.CODEX)
-    assert endpoint is not None
-    assert endpoint.api_format == " OpenAI:CLI "
+    db = _FakeDB(provider=None, keys=[], endpoints=provider.endpoints)
+    with pytest.raises(InvalidRequestException, match="找不到有效的 openai:cli 端点"):
+        _select_refresh_endpoint(cast(Any, db), provider_id="p1", provider_type=ProviderType.CODEX)
 
 
 def test_select_refresh_endpoint_antigravity_prefers_chat() -> None:
     provider = _provider_with_endpoints(("gemini:cli", True), ("gemini:chat", True))
-    endpoint = _select_refresh_endpoint(cast(Any, provider), ProviderType.ANTIGRAVITY)
+    db = _FakeDB(provider=None, keys=[], endpoints=provider.endpoints)
+    endpoint = _select_refresh_endpoint(
+        cast(Any, db),
+        provider_id="p1",
+        provider_type=ProviderType.ANTIGRAVITY,
+    )
     assert endpoint is not None
     assert endpoint.api_format == "gemini:chat"
 
 
 def test_select_refresh_endpoint_antigravity_fallback_cli() -> None:
     provider = _provider_with_endpoints(("gemini:chat", False), ("gemini:cli", True))
-    endpoint = _select_refresh_endpoint(cast(Any, provider), ProviderType.ANTIGRAVITY)
+    db = _FakeDB(provider=None, keys=[], endpoints=provider.endpoints)
+    endpoint = _select_refresh_endpoint(
+        cast(Any, db),
+        provider_id="p1",
+        provider_type=ProviderType.ANTIGRAVITY,
+    )
     assert endpoint is not None
     assert endpoint.api_format == "gemini:cli"
 
 
 def test_select_refresh_endpoint_kiro_returns_none() -> None:
-    provider = _provider_with_endpoints(("openai:cli", True))
-    endpoint = _select_refresh_endpoint(cast(Any, provider), ProviderType.KIRO)
+    db = _FakeDB(provider=None, keys=[], endpoints=[])
+    endpoint = _select_refresh_endpoint(cast(Any, db), provider_id="p1", provider_type=ProviderType.KIRO)
     assert endpoint is None
 
 
 def test_select_refresh_endpoint_codex_missing_raises() -> None:
     provider = _provider_with_endpoints(("openai:chat", True))
+    db = _FakeDB(provider=None, keys=[], endpoints=provider.endpoints)
     with pytest.raises(InvalidRequestException, match="找不到有效的 openai:cli 端点"):
-        _select_refresh_endpoint(cast(Any, provider), ProviderType.CODEX)
+        _select_refresh_endpoint(cast(Any, db), provider_id="p1", provider_type=ProviderType.CODEX)
 
 
 def test_select_refresh_endpoint_antigravity_missing_raises() -> None:
     provider = _provider_with_endpoints(("gemini:chat", False), ("gemini:cli", False))
+    db = _FakeDB(provider=None, keys=[], endpoints=provider.endpoints)
     with pytest.raises(InvalidRequestException, match="找不到有效的 gemini:chat/gemini:cli 端点"):
-        _select_refresh_endpoint(cast(Any, provider), ProviderType.ANTIGRAVITY)
+        _select_refresh_endpoint(
+            cast(Any, db),
+            provider_id="p1",
+            provider_type=ProviderType.ANTIGRAVITY,
+        )
 
 
 def test_resolve_quota_refresh_handler() -> None:
@@ -195,8 +273,22 @@ async def test_refresh_provider_quota_aggregates_and_merges_metadata(
         provider_type=ProviderType.CODEX,
         endpoints=[SimpleNamespace(api_format="openai:cli", is_active=True)],
     )
-    key1 = SimpleNamespace(id="k1", name="K1", upstream_metadata={"old": True})
-    key2 = SimpleNamespace(id="k2", name="K2", upstream_metadata={})
+    key1 = SimpleNamespace(
+        id="k1",
+        name="K1",
+        provider_id="p1",
+        upstream_metadata={"old": True},
+        is_active=True,
+        oauth_invalid_reason=None,
+    )
+    key2 = SimpleNamespace(
+        id="k2",
+        name="K2",
+        provider_id="p1",
+        upstream_metadata={},
+        is_active=True,
+        oauth_invalid_reason=None,
+    )
     db = _FakeDB(provider=provider, keys=[key1, key2])
 
     async def _fake_handler(**kwargs: Any) -> dict[str, Any]:
@@ -210,7 +302,7 @@ async def test_refresh_provider_quota_aggregates_and_merges_metadata(
     monkeypatch.setattr(
         quota_service_module,
         "_select_refresh_endpoint",
-        lambda provider, provider_type: provider.endpoints[0],
+        lambda db, *, provider_id, provider_type: provider.endpoints[0],
     )
     monkeypatch.setattr(
         quota_service_module, "_resolve_quota_refresh_handler", lambda _: _fake_handler
@@ -248,6 +340,7 @@ async def test_refresh_provider_quota_applies_state_updates_and_single_commit(
     key1 = SimpleNamespace(
         id="k1",
         name="K1",
+        provider_id="p1",
         upstream_metadata={},
         is_active=True,
         oauth_invalid_at="old",
@@ -256,6 +349,7 @@ async def test_refresh_provider_quota_applies_state_updates_and_single_commit(
     key2 = SimpleNamespace(
         id="k2",
         name="K2",
+        provider_id="p1",
         upstream_metadata={},
         is_active=True,
         oauth_invalid_at=None,
@@ -275,7 +369,7 @@ async def test_refresh_provider_quota_applies_state_updates_and_single_commit(
     monkeypatch.setattr(
         quota_service_module,
         "_select_refresh_endpoint",
-        lambda provider, provider_type: provider.endpoints[0],
+        lambda db, *, provider_id, provider_type: provider.endpoints[0],
     )
     monkeypatch.setattr(
         quota_service_module, "_resolve_quota_refresh_handler", lambda _: _fake_handler
@@ -306,7 +400,14 @@ async def test_refresh_provider_quota_handler_exception_returns_error(
         provider_type=ProviderType.CODEX,
         endpoints=[SimpleNamespace(api_format="openai:cli", is_active=True)],
     )
-    key = SimpleNamespace(id="k1", name="K1", upstream_metadata={})
+    key = SimpleNamespace(
+        id="k1",
+        name="K1",
+        provider_id="p1",
+        upstream_metadata={},
+        is_active=True,
+        oauth_invalid_reason=None,
+    )
     db = _FakeDB(provider=provider, keys=[key])
 
     async def _boom_handler(**kwargs: Any) -> dict[str, Any]:
@@ -316,7 +417,7 @@ async def test_refresh_provider_quota_handler_exception_returns_error(
     monkeypatch.setattr(
         quota_service_module,
         "_select_refresh_endpoint",
-        lambda provider, provider_type: provider.endpoints[0],
+        lambda db, *, provider_id, provider_type: provider.endpoints[0],
     )
     monkeypatch.setattr(
         quota_service_module, "_resolve_quota_refresh_handler", lambda _: _boom_handler
@@ -390,7 +491,7 @@ async def test_refresh_provider_quota_auto_removes_banned_keys_when_enabled(
     monkeypatch.setattr(
         quota_service_module,
         "_select_refresh_endpoint",
-        lambda provider, provider_type: provider.endpoints[0],
+        lambda db, *, provider_id, provider_type: provider.endpoints[0],
     )
     monkeypatch.setattr(
         quota_service_module, "_resolve_quota_refresh_handler", lambda _: _fake_handler
@@ -449,7 +550,7 @@ async def test_refresh_provider_quota_does_not_auto_remove_oauth_expired_keys(
     monkeypatch.setattr(
         quota_service_module,
         "_select_refresh_endpoint",
-        lambda provider, provider_type: provider.endpoints[0],
+        lambda db, *, provider_id, provider_type: provider.endpoints[0],
     )
     monkeypatch.setattr(
         quota_service_module, "_resolve_quota_refresh_handler", lambda _: _fake_handler
