@@ -457,7 +457,7 @@ function getApiFormatsKey(formats: string[] | undefined): string {
   return [...formats].sort().join(',')
 }
 
-function normalizeReasoningEffortMap(input?: Record<string, unknown> | null): Record<string, string> {
+function normalizeStringMap(input?: Record<string, unknown> | null): Record<string, string> {
   if (!input || typeof input !== 'object') return {}
 
   const normalized: Record<string, string> = {}
@@ -472,14 +472,18 @@ function normalizeReasoningEffortMap(input?: Record<string, unknown> | null): Re
 }
 
 function getRequestOverridesKey(alias: ProviderModelAlias): string {
-  const reasoningEffortMap = normalizeReasoningEffortMap(alias.request_overrides?.reasoning_effort_map)
-  const entries = Object.entries(reasoningEffortMap).sort(([a], [b]) => a.localeCompare(b))
+  const reasoningEffortMap = normalizeStringMap(alias.request_overrides?.reasoning_effort_map)
+  const verbosityMap = normalizeStringMap(alias.request_overrides?.verbosity_map)
+  const entries = [
+    ['reasoning_effort_map', Object.entries(reasoningEffortMap).sort(([a], [b]) => a.localeCompare(b))],
+    ['verbosity_map', Object.entries(verbosityMap).sort(([a], [b]) => a.localeCompare(b))]
+  ].filter(([, value]) => value.length > 0)
   if (entries.length === 0) return ''
   return JSON.stringify(entries)
 }
 
 function formatReasoningEffortSummary(alias: ProviderModelAlias): string | null {
-  const reasoningEffortMap = normalizeReasoningEffortMap(alias.request_overrides?.reasoning_effort_map)
+  const reasoningEffortMap = normalizeStringMap(alias.request_overrides?.reasoning_effort_map)
   const entries = Object.entries(reasoningEffortMap).sort(([a], [b]) => {
     if (a === '*') return -1
     if (b === '*') return 1
@@ -487,6 +491,22 @@ function formatReasoningEffortSummary(alias: ProviderModelAlias): string | null 
   })
   if (entries.length === 0) return null
   return `effort: ${entries.map(([source, target]) => `${source} -> ${target}`).join('，')}`
+}
+
+function formatVerbositySummary(alias: ProviderModelAlias): string | null {
+  const verbosityMap = normalizeStringMap(alias.request_overrides?.verbosity_map)
+  const entries = Object.entries(verbosityMap).sort(([a], [b]) => {
+    if (a === '*') return -1
+    if (b === '*') return 1
+    return a.localeCompare(b)
+  })
+  if (entries.length === 0) return null
+  return `verbosity: ${entries.map(([source, target]) => `${source} -> ${target}`).join('，')}`
+}
+
+function formatOverrideSummary(alias: ProviderModelAlias): string | null {
+  const parts = [formatReasoningEffortSummary(alias), formatVerbositySummary(alias)].filter(Boolean)
+  return parts.length > 0 ? parts.join(' | ') : null
 }
 
 // 精确映射分组（来自 provider_model_mappings）
@@ -591,7 +611,7 @@ const combinedMappings = computed<CombinedMapping[]>(() => {
       mappings: group.aliases.map(a => ({
         name: a.name,
         priority: a.priority,
-        overrideSummary: formatReasoningEffortSummary(a) || undefined
+        overrideSummary: formatOverrideSummary(a) || undefined
       })),
       group
     })

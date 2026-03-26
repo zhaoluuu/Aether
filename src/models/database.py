@@ -1787,6 +1787,22 @@ class Model(ExportMixin, Base):
                             normalized_effort_map
                         )
 
+                verbosity_map = request_overrides.get("verbosity_map")
+                if isinstance(verbosity_map, dict):
+                    normalized_verbosity_map: dict[str, str] = {}
+                    for source_verbosity, target_verbosity in verbosity_map.items():
+                        if not isinstance(source_verbosity, str) or not isinstance(
+                            target_verbosity, str
+                        ):
+                            continue
+                        source = source_verbosity.strip().lower()
+                        target = target_verbosity.strip().lower()
+                        if not source or not target:
+                            continue
+                        normalized_verbosity_map[source] = target
+                    if normalized_verbosity_map:
+                        normalized_request_overrides["verbosity_map"] = normalized_verbosity_map
+
                 if normalized_request_overrides:
                     normalized_mapping["request_overrides"] = normalized_request_overrides
 

@@ -8,6 +8,31 @@ from src.core.api_format.conversion.field_mappings import REASONING_EFFORT_TO_CL
 from src.core.logger import logger
 
 
+def _resolve_mapped_value(
+    current_value: str | None,
+    value_map: dict[str, Any] | None,
+) -> tuple[str | None, str | None]:
+    if not isinstance(current_value, str) or not current_value.strip():
+        return None, None
+    if not isinstance(value_map, dict) or not value_map:
+        return None, None
+
+    normalized_current_value = current_value.strip().lower()
+    target_value = value_map.get(normalized_current_value)
+    if not isinstance(target_value, str) or not target_value.strip():
+        wildcard_value = value_map.get("*")
+        target_value = wildcard_value if isinstance(wildcard_value, str) else None
+
+    if not isinstance(target_value, str) or not target_value.strip():
+        return normalized_current_value, None
+
+    normalized_target_value = target_value.strip().lower()
+    if normalized_target_value == normalized_current_value:
+        return normalized_current_value, None
+
+    return normalized_current_value, normalized_target_value
+
+
 def _extract_semantic_reasoning_effort(request_body: dict[str, Any]) -> str | None:
     reasoning = request_body.get("reasoning")
     if isinstance(reasoning, dict):
@@ -93,6 +118,56 @@ def _write_semantic_reasoning_effort(
     return request_body
 
 
+def _extract_semantic_verbosity(request_body: dict[str, Any]) -> str | None:
+    text_config = request_body.get("text")
+    if isinstance(text_config, dict):
+        verbosity = text_config.get("verbosity")
+        if isinstance(verbosity, str) and verbosity.strip():
+            return verbosity.strip().lower()
+
+    verbosity = request_body.get("verbosity")
+    if isinstance(verbosity, str) and verbosity.strip():
+        return verbosity.strip().lower()
+
+    return None
+
+
+def _write_semantic_verbosity(
+    request_body: dict[str, Any],
+    target_verbosity: str,
+    provider_api_format: str | None,
+) -> dict[str, Any]:
+    normalized_api_format = str(provider_api_format or "").strip().lower()
+
+    if normalized_api_format == "openai:cli":
+        text_config = request_body.get("text")
+        if not isinstance(text_config, dict):
+            text_config = {}
+            request_body["text"] = text_config
+        text_config["verbosity"] = target_verbosity
+        request_body.pop("verbosity", None)
+        return request_body
+
+    if normalized_api_format == "openai:chat":
+        request_body["verbosity"] = target_verbosity
+        text_config = request_body.get("text")
+        if isinstance(text_config, dict):
+            text_config.pop("verbosity", None)
+            if not text_config:
+                request_body.pop("text", None)
+        return request_body
+
+    if isinstance(request_body.get("text"), dict):
+        request_body["text"]["verbosity"] = target_verbosity
+        return request_body
+    if "verbosity" in request_body:
+        request_body["verbosity"] = target_verbosity
+        return request_body
+
+    request_body["verbosity"] = target_verbosity
+    return request_body
+
+
 def apply_provider_model_request_overrides(
     request_body: dict[str, Any],
     selected_mapping: dict[str, Any] | None,
@@ -108,36 +183,41 @@ def apply_provider_model_request_overrides(
         return request_body
 
     reasoning_effort_map = request_overrides.get("reasoning_effort_map")
-    if not isinstance(reasoning_effort_map, dict) or not reasoning_effort_map:
-        return request_body
-
-    current_effort = _extract_semantic_reasoning_effort(request_body)
-    if not isinstance(current_effort, str) or not current_effort.strip():
-        return request_body
-
-    normalized_current_effort = current_effort.strip().lower()
-    target_effort = reasoning_effort_map.get(normalized_current_effort)
-    if not isinstance(target_effort, str) or not target_effort.strip():
-        wildcard_effort = reasoning_effort_map.get("*")
-        target_effort = wildcard_effort if isinstance(wildcard_effort, str) else None
-
-    if not isinstance(target_effort, str) or not target_effort.strip():
-        return request_body
-
-    normalized_target_effort = target_effort.strip().lower()
-    if normalized_target_effort == normalized_current_effort:
-        return request_body
-
-    _write_semantic_reasoning_effort(
-        request_body,
-        normalized_target_effort,
-        provider_api_format,
+    current_effort, target_effort = _resolve_mapped_value(
+        _extract_semantic_reasoning_effort(request_body),
+        reasoning_effort_map if isinstance(reasoning_effort_map, dict) else None,
     )
-    logger.debug(
-        "[provider_model_mapping] rewritten reasoning_effort: {} -> {} for mapped model {} (api_format={})",
-        normalized_current_effort,
-        normalized_target_effort,
-        selected_mapping.get("name") or "<unknown>",
-        provider_api_format or "<unknown>",
+    if current_effort and target_effort:
+        _write_semantic_reasoning_effort(
+            request_body,
+            target_effort,
+            provider_api_format,
+        )
+        logger.debug(
+            "[provider_model_mapping] rewritten reasoning_effort: {} -> {} for mapped model {} (api_format={})",
+            current_effort,
+            target_effort,
+            selected_mapping.get("name") or "<unknown>",
+            provider_api_format or "<unknown>",
+        )
+
+    verbosity_map = request_overrides.get("verbosity_map")
+    current_verbosity, target_verbosity = _resolve_mapped_value(
+        _extract_semantic_verbosity(request_body),
+        verbosity_map if isinstance(verbosity_map, dict) else None,
     )
+    if current_verbosity and target_verbosity:
+        _write_semantic_verbosity(
+            request_body,
+            target_verbosity,
+            provider_api_format,
+        )
+        logger.debug(
+            "[provider_model_mapping] rewritten verbosity: {} -> {} for mapped model {} (api_format={})",
+            current_verbosity,
+            target_verbosity,
+            selected_mapping.get("name") or "<unknown>",
+            provider_api_format or "<unknown>",
+        )
+
     return request_body

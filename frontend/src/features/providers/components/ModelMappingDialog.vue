@@ -224,39 +224,57 @@
         </div>
       </div>
 
-      <div class="space-y-2">
+      <div class="space-y-4">
         <div class="space-y-1">
           <Label class="text-xs">请求覆盖</Label>
           <p class="text-xs text-muted-foreground">
-            可按映射规则重写上游请求里的 <span class="font-mono">reasoning.effort</span>，留空表示不调整
+            可按映射规则重写上游请求参数；通用覆盖和逐项映射二选一，避免配置冲突
           </p>
         </div>
-        <div class="rounded-lg border divide-y">
-          <div
-            v-for="effortKey in effortRuleOrder"
-            :key="effortKey"
-            class="flex items-center gap-3 px-3 py-2"
-          >
-            <div class="min-w-0 flex-1">
+
+        <div class="rounded-lg border p-3 space-y-3">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
               <div class="text-sm font-medium">
-                {{ getEffortSourceLabel(effortKey) }}
+                推理强度
               </div>
               <div class="text-xs text-muted-foreground">
-                {{ effortKey === '*' ? '兜底匹配所有未单独配置的 effort' : `当请求 effort 为 ${effortKey} 时生效` }}
+                对应 <span class="font-mono">reasoning.effort</span> 等语义字段
               </div>
             </div>
             <div class="w-44 shrink-0">
               <Select
-                :model-value="getEffortRuleValue(effortKey)"
-                @update:model-value="setEffortRuleValue(effortKey, $event)"
+                :model-value="formData.reasoningEffortMode"
+                @update:model-value="setReasoningEffortMode"
               >
                 <SelectTrigger class="h-9">
-                  <SelectValue placeholder="不调整" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">
-                    不调整
-                  </SelectItem>
+                  <SelectItem value="none">不调整</SelectItem>
+                  <SelectItem value="wildcard">通用覆盖</SelectItem>
+                  <SelectItem value="per_value">逐项映射</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div
+            v-if="formData.reasoningEffortMode === 'wildcard'"
+            class="flex items-center gap-3"
+          >
+            <div class="flex-1 text-sm text-muted-foreground">
+              effort <span class="font-mono">*</span> 统一改为
+            </div>
+            <div class="w-44 shrink-0">
+              <Select
+                :model-value="formData.reasoningEffortWildcard || '__none__'"
+                @update:model-value="setReasoningEffortWildcard"
+              >
+                <SelectTrigger class="h-9">
+                  <SelectValue placeholder="请选择" />
+                </SelectTrigger>
+                <SelectContent>
                   <SelectItem
                     v-for="targetEffort in effortTargetOptions"
                     :key="targetEffort"
@@ -266,6 +284,142 @@
                   </SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+
+          <div
+            v-else-if="formData.reasoningEffortMode === 'per_value'"
+            class="rounded-md border divide-y"
+          >
+            <div
+              v-for="effortKey in effortPerValueOrder"
+              :key="effortKey"
+              class="flex items-center gap-3 px-3 py-2"
+            >
+              <div class="min-w-0 flex-1">
+                <div class="text-sm font-medium">
+                  effort {{ effortKey }}
+                </div>
+                <div class="text-xs text-muted-foreground">
+                  当请求 effort 为 {{ effortKey }} 时生效
+                </div>
+              </div>
+              <div class="w-44 shrink-0">
+                <Select
+                  :model-value="getPerValueRuleValue(formData.reasoningEffortPerValueMap, effortKey)"
+                  @update:model-value="setPerValueRuleValue('reasoningEffortPerValueMap', effortKey, $event)"
+                >
+                  <SelectTrigger class="h-9">
+                    <SelectValue placeholder="不调整" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">不调整</SelectItem>
+                    <SelectItem
+                      v-for="targetEffort in effortTargetOptions"
+                      :key="targetEffort"
+                      :value="targetEffort"
+                    >
+                      {{ targetEffort }}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="rounded-lg border p-3 space-y-3">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="text-sm font-medium">
+                输出详细度
+              </div>
+              <div class="text-xs text-muted-foreground">
+                对应 <span class="font-mono">text.verbosity</span> / <span class="font-mono">verbosity</span>
+              </div>
+            </div>
+            <div class="w-44 shrink-0">
+              <Select
+                :model-value="formData.verbosityMode"
+                @update:model-value="setVerbosityMode"
+              >
+                <SelectTrigger class="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">不调整</SelectItem>
+                  <SelectItem value="wildcard">通用覆盖</SelectItem>
+                  <SelectItem value="per_value">逐项映射</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div
+            v-if="formData.verbosityMode === 'wildcard'"
+            class="flex items-center gap-3"
+          >
+            <div class="flex-1 text-sm text-muted-foreground">
+              verbosity <span class="font-mono">*</span> 统一改为
+            </div>
+            <div class="w-44 shrink-0">
+              <Select
+                :model-value="formData.verbosityWildcard || '__none__'"
+                @update:model-value="setVerbosityWildcard"
+              >
+                <SelectTrigger class="h-9">
+                  <SelectValue placeholder="请选择" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem
+                    v-for="targetVerbosity in verbosityTargetOptions"
+                    :key="targetVerbosity"
+                    :value="targetVerbosity"
+                  >
+                    {{ targetVerbosity }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div
+            v-else-if="formData.verbosityMode === 'per_value'"
+            class="rounded-md border divide-y"
+          >
+            <div
+              v-for="verbosityKey in verbosityPerValueOrder"
+              :key="verbosityKey"
+              class="flex items-center gap-3 px-3 py-2"
+            >
+              <div class="min-w-0 flex-1">
+                <div class="text-sm font-medium">
+                  verbosity {{ verbosityKey }}
+                </div>
+                <div class="text-xs text-muted-foreground">
+                  当请求 verbosity 为 {{ verbosityKey }} 时生效
+                </div>
+              </div>
+              <div class="w-44 shrink-0">
+                <Select
+                  :model-value="getPerValueRuleValue(formData.verbosityPerValueMap, verbosityKey)"
+                  @update:model-value="setPerValueRuleValue('verbosityPerValueMap', verbosityKey, $event)"
+                >
+                  <SelectTrigger class="h-9">
+                    <SelectValue placeholder="不调整" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">不调整</SelectItem>
+                    <SelectItem
+                      v-for="targetVerbosity in verbosityTargetOptions"
+                      :key="targetVerbosity"
+                      :value="targetVerbosity"
+                    >
+                      {{ targetVerbosity }}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
         </div>
@@ -317,6 +471,8 @@ import {
 import { updateModel } from '@/api/endpoints/models'
 import { useUpstreamModelsCache } from '../composables/useUpstreamModelsCache'
 
+type OverrideMode = 'none' | 'wildcard' | 'per_value'
+
 export interface AliasGroup {
   model: Model
   /** @deprecated */
@@ -362,14 +518,26 @@ const upstreamModels = ref<UpstreamModel[]>([])
 // 表单数据
 const formData = ref<{
   modelId: string
-  reasoningEffortMap: Record<string, string>
+  reasoningEffortMode: OverrideMode
+  reasoningEffortWildcard: string
+  reasoningEffortPerValueMap: Record<string, string>
+  verbosityMode: OverrideMode
+  verbosityWildcard: string
+  verbosityPerValueMap: Record<string, string>
 }>({
   modelId: '',
-  reasoningEffortMap: {}
+  reasoningEffortMode: 'none',
+  reasoningEffortWildcard: '',
+  reasoningEffortPerValueMap: {},
+  verbosityMode: 'none',
+  verbosityWildcard: '',
+  verbosityPerValueMap: {}
 })
 
-const effortRuleOrder = ['*', 'low', 'medium', 'high', 'xhigh'] as const
+const effortPerValueOrder = ['low', 'medium', 'high', 'xhigh'] as const
 const effortTargetOptions = ['low', 'medium', 'high', 'xhigh'] as const
+const verbosityPerValueOrder = ['low', 'medium', 'high'] as const
+const verbosityTargetOptions = ['low', 'medium', 'high'] as const
 
 // 选中的映射名称
 const selectedNames = ref<string[]>([])
@@ -531,11 +699,22 @@ watch(() => props.open, async (isOpen) => {
 function initForm() {
   if (props.editingGroup) {
     const firstAlias = props.editingGroup.aliases[0]
+    const reasoningEffortState = parseOverrideState(
+      normalizeStringMap(firstAlias?.request_overrides?.reasoning_effort_map),
+      effortPerValueOrder
+    )
+    const verbosityState = parseOverrideState(
+      normalizeStringMap(firstAlias?.request_overrides?.verbosity_map),
+      verbosityPerValueOrder
+    )
     formData.value = {
       modelId: props.editingGroup.model.id,
-      reasoningEffortMap: normalizeReasoningEffortMap(
-        firstAlias?.request_overrides?.reasoning_effort_map
-      )
+      reasoningEffortMode: reasoningEffortState.mode,
+      reasoningEffortWildcard: reasoningEffortState.wildcard,
+      reasoningEffortPerValueMap: reasoningEffortState.perValueMap,
+      verbosityMode: verbosityState.mode,
+      verbosityWildcard: verbosityState.wildcard,
+      verbosityPerValueMap: verbosityState.perValueMap
     }
     const existingNames = props.editingGroup.aliases.map(a => a.name)
     selectedNames.value = [...existingNames]
@@ -543,7 +722,12 @@ function initForm() {
   } else {
     formData.value = {
       modelId: props.preselectedModelId || '',
-      reasoningEffortMap: {}
+      reasoningEffortMode: 'none',
+      reasoningEffortWildcard: '',
+      reasoningEffortPerValueMap: {},
+      verbosityMode: 'none',
+      verbosityWildcard: '',
+      verbosityPerValueMap: {}
     }
     selectedNames.value = []
     allCustomNames.value = []
@@ -559,7 +743,7 @@ function handleModelChange(value: string) {
   formData.value.modelId = value
 }
 
-function normalizeReasoningEffortMap(
+function normalizeStringMap(
   input?: Record<string, unknown> | null
 ): Record<string, string> {
   if (!input || typeof input !== 'object') return {}
@@ -575,22 +759,101 @@ function normalizeReasoningEffortMap(
   return normalized
 }
 
-function getEffortSourceLabel(effortKey: string): string {
-  return effortKey === '*' ? 'effort *' : `effort ${effortKey}`
-}
-
-function getEffortRuleValue(effortKey: string): string {
-  return formData.value.reasoningEffortMap[effortKey] || '__none__'
-}
-
-function setEffortRuleValue(effortKey: string, value: string) {
-  const nextMap = { ...formData.value.reasoningEffortMap }
-  if (!value || value === '__none__') {
-    delete nextMap[effortKey]
-  } else {
-    nextMap[effortKey] = value
+function parseOverrideState(
+  input: Record<string, string>,
+  allowedKeys: readonly string[]
+): {
+  mode: OverrideMode
+  wildcard: string
+  perValueMap: Record<string, string>
+} {
+  const wildcard = input['*'] || ''
+  const perValueMap: Record<string, string> = {}
+  for (const key of allowedKeys) {
+    if (input[key]) perValueMap[key] = input[key]
   }
-  formData.value.reasoningEffortMap = nextMap
+
+  if (Object.keys(perValueMap).length > 0) {
+    return {
+      mode: 'per_value',
+      wildcard: '',
+      perValueMap
+    }
+  }
+
+  if (wildcard) {
+    return {
+      mode: 'wildcard',
+      wildcard,
+      perValueMap: {}
+    }
+  }
+
+  return {
+    mode: 'none',
+    wildcard: '',
+    perValueMap: {}
+  }
+}
+
+function buildOverrideMap(
+  mode: OverrideMode,
+  wildcard: string,
+  perValueMap: Record<string, string>
+): Record<string, string> {
+  if (mode === 'wildcard' && wildcard) {
+    return { '*': wildcard }
+  }
+  if (mode === 'per_value') {
+    return normalizeStringMap(perValueMap)
+  }
+  return {}
+}
+
+function getPerValueRuleValue(map: Record<string, string>, key: string): string {
+  return map[key] || '__none__'
+}
+
+function setPerValueRuleValue(
+  field: 'reasoningEffortPerValueMap' | 'verbosityPerValueMap',
+  key: string,
+  value: string
+) {
+  const nextMap = { ...formData.value[field] }
+  if (!value || value === '__none__') {
+    delete nextMap[key]
+  } else {
+    nextMap[key] = value
+  }
+  formData.value[field] = nextMap
+}
+
+function setReasoningEffortMode(value: string) {
+  formData.value.reasoningEffortMode = (value as OverrideMode) || 'none'
+  if (formData.value.reasoningEffortMode !== 'wildcard') {
+    formData.value.reasoningEffortWildcard = ''
+  }
+  if (formData.value.reasoningEffortMode !== 'per_value') {
+    formData.value.reasoningEffortPerValueMap = {}
+  }
+}
+
+function setReasoningEffortWildcard(value: string) {
+  formData.value.reasoningEffortWildcard = value === '__none__' ? '' : value
+}
+
+function setVerbosityMode(value: string) {
+  formData.value.verbosityMode = (value as OverrideMode) || 'none'
+  if (formData.value.verbosityMode !== 'wildcard') {
+    formData.value.verbosityWildcard = ''
+  }
+  if (formData.value.verbosityMode !== 'per_value') {
+    formData.value.verbosityPerValueMap = {}
+  }
+}
+
+function setVerbosityWildcard(value: string) {
+  formData.value.verbosityWildcard = value === '__none__' ? '' : value
 }
 
 // 生成作用域唯一键
@@ -600,8 +863,12 @@ function getApiFormatsKey(formats: string[] | undefined): string {
 }
 
 function getRequestOverridesKey(alias: ProviderModelAlias): string {
-  const reasoningEffortMap = normalizeReasoningEffortMap(alias.request_overrides?.reasoning_effort_map)
-  const entries = Object.entries(reasoningEffortMap).sort(([a], [b]) => a.localeCompare(b))
+  const reasoningEffortMap = normalizeStringMap(alias.request_overrides?.reasoning_effort_map)
+  const verbosityMap = normalizeStringMap(alias.request_overrides?.verbosity_map)
+  const entries = [
+    ['reasoning_effort_map', Object.entries(reasoningEffortMap).sort(([a], [b]) => a.localeCompare(b))],
+    ['verbosity_map', Object.entries(verbosityMap).sort(([a], [b]) => a.localeCompare(b))]
+  ].filter(([, value]) => value.length > 0)
   if (entries.length === 0) return ''
   return JSON.stringify(entries)
 }
@@ -623,14 +890,24 @@ async function handleSubmit() {
     let newAliases: ProviderModelAlias[]
 
     const buildAliases = (names: string[]): ProviderModelAlias[] => {
-      const reasoningEffortMap = normalizeReasoningEffortMap(formData.value.reasoningEffortMap)
-      const requestOverrides = Object.keys(reasoningEffortMap).length > 0
-        ? { reasoning_effort_map: reasoningEffortMap }
-        : undefined
+      const reasoningEffortMap = buildOverrideMap(
+        formData.value.reasoningEffortMode,
+        formData.value.reasoningEffortWildcard,
+        formData.value.reasoningEffortPerValueMap
+      )
+      const verbosityMap = buildOverrideMap(
+        formData.value.verbosityMode,
+        formData.value.verbosityWildcard,
+        formData.value.verbosityPerValueMap
+      )
+      const requestOverrides = {
+        ...(Object.keys(reasoningEffortMap).length > 0 ? { reasoning_effort_map: reasoningEffortMap } : {}),
+        ...(Object.keys(verbosityMap).length > 0 ? { verbosity_map: verbosityMap } : {})
+      }
       return names.map((name) => ({
         name: name.trim(),
         priority: 1,
-        ...(requestOverrides ? { request_overrides: requestOverrides } : {})
+        ...(Object.keys(requestOverrides).length > 0 ? { request_overrides: requestOverrides } : {})
       }))
     }
 

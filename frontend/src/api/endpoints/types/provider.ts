@@ -614,6 +614,7 @@ export interface ProviderModelMapping {
   api_formats?: string[]  // 作用域（适用的 API 格式），为空表示对所有格式生效
   request_overrides?: {
     reasoning_effort_map?: Record<string, string>
+    verbosity_map?: Record<string, string>
   }
 }
 

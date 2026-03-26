@@ -16,7 +16,10 @@ def test_select_provider_model_mapping_preserves_request_overrides() -> None:
                     "reasoning_effort_map": {
                         "*": "medium",
                         "high": "medium",
-                    }
+                    },
+                    "verbosity_map": {
+                        "*": "medium",
+                    },
                 },
             }
         ],
@@ -33,7 +36,10 @@ def test_select_provider_model_mapping_preserves_request_overrides() -> None:
         "reasoning_effort_map": {
             "*": "medium",
             "high": "medium",
-        }
+        },
+        "verbosity_map": {
+            "*": "medium",
+        },
     }
 
 
@@ -168,3 +174,48 @@ def test_apply_provider_model_request_overrides_rewrites_claude_semantically() -
 
     assert result["output_config"]["effort"] == "medium"
     assert "reasoning" not in result
+
+
+def test_apply_provider_model_request_overrides_rewrites_openai_cli_verbosity() -> None:
+    request_body = {
+        "text": {
+            "verbosity": "low",
+        },
+    }
+
+    result = apply_provider_model_request_overrides(
+        request_body,
+        {
+            "name": "gpt-5.2-codex",
+            "request_overrides": {
+                "verbosity_map": {
+                    "*": "medium",
+                }
+            },
+        },
+        provider_api_format="openai:cli",
+    )
+
+    assert result["text"]["verbosity"] == "medium"
+    assert "verbosity" not in result
+
+
+def test_apply_provider_model_request_overrides_rewrites_openai_chat_verbosity() -> None:
+    request_body = {
+        "verbosity": "low",
+    }
+
+    result = apply_provider_model_request_overrides(
+        request_body,
+        {
+            "name": "gpt-5.2-codex",
+            "request_overrides": {
+                "verbosity_map": {
+                    "low": "medium",
+                }
+            },
+        },
+        provider_api_format="openai:chat",
+    )
+
+    assert result["verbosity"] == "medium"
