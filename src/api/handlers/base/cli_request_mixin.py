@@ -13,6 +13,7 @@ from src.api.handlers.base.utils import get_format_converter_registry
 from src.core.api_format.headers import set_accept_if_absent
 from src.core.logger import logger
 from src.services.provider.behavior import get_provider_behavior
+from src.services.model.provider_model_mapping import apply_provider_model_request_overrides
 from src.services.provider.prompt_cache import maybe_patch_request_with_prompt_cache_key
 from src.services.provider.stream_policy import (
     enforce_stream_mode_for_upstream,
@@ -44,6 +45,32 @@ class CliUpstreamRequestResult:
 class CliRequestMixin:
     """请求准备相关方法的 Mixin"""
 
+    async def _get_selected_provider_model_mapping(
+        self,
+        source_model: str,
+        provider_id: str,
+        api_format: str | None = None,
+    ) -> dict[str, Any] | None:
+        """获取当前请求最终命中的 provider_model_mappings 项。"""
+        from src.services.model.mapper import ModelMapperMiddleware
+
+        mapper = ModelMapperMiddleware(self.db)
+        mapping = await mapper.get_mapping(source_model, provider_id)
+
+        logger.debug(
+            f"[CLI] _get_selected_provider_model_mapping: source={source_model}, "
+            f"provider={provider_id[:8]}..., mapping={mapping}"
+        )
+
+        if mapping and mapping.model:
+            affinity_key = self.api_key.id if self.api_key else None
+            return mapping.model.select_provider_model_mapping(
+                affinity_key,
+                api_format=api_format or self.FORMAT_ID,
+            )
+
+        return None
+
     async def _get_mapped_model(
         self,
         source_model: str,
@@ -64,23 +91,12 @@ class CliRequestMixin:
         Returns:
             映射后的 Provider 模型名，如果没有找到映射则返回 None
         """
-        from src.services.model.mapper import ModelMapperMiddleware
-
-        mapper = ModelMapperMiddleware(self.db)
-        mapping = await mapper.get_mapping(source_model, provider_id)
-
-        logger.debug(
-            f"[CLI] _get_mapped_model: source={source_model}, provider={provider_id[:8]}..., mapping={mapping}"
+        selected_mapping = await self._get_selected_provider_model_mapping(
+            source_model,
+            provider_id,
         )
-
-        if mapping and mapping.model:
-            # 使用 select_provider_model_name 支持模型映射功能
-            # 传入 api_key.id 作为 affinity_key，实现相同用户稳定选择同一映射
-            # 传入 api_format 用于过滤适用的映射作用域
-            affinity_key = self.api_key.id if self.api_key else None
-            mapped_name = mapping.model.select_provider_model_name(
-                affinity_key, api_format=self.FORMAT_ID
-            )
+        if selected_mapping and isinstance(selected_mapping.get("name"), str):
+            mapped_name = selected_mapping["name"]
             logger.debug(
                 f"[CLI] 模型映射: {source_model} -> {mapped_name} (provider={provider_id[:8]}...)"
             )
@@ -242,6 +258,12 @@ class CliRequestMixin:
                 key=key,
             )
 
+        selected_mapping = await self._get_selected_provider_model_mapping(
+            fallback_model,
+            str(getattr(provider, "id", "") or ""),
+            provider_api_format,
+        )
+
         if needs_conversion and provider_api_format:
             request_body, url_model = await self._convert_request_for_cross_format(
                 request_body,
@@ -267,6 +289,11 @@ class CliRequestMixin:
                     target_variant=target_variant,
                 )
 
+        request_body = apply_provider_model_request_overrides(
+            request_body,
+            selected_mapping,
+            provider_api_format=provider_api_format,
+        )
         request_body = self.finalize_provider_request(
             request_body,
             mapped_model=mapped_model,

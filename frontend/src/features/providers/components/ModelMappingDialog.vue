@@ -223,6 +223,53 @@
           </div>
         </div>
       </div>
+
+      <div class="space-y-2">
+        <div class="space-y-1">
+          <Label class="text-xs">请求覆盖</Label>
+          <p class="text-xs text-muted-foreground">
+            可按映射规则重写上游请求里的 <span class="font-mono">reasoning.effort</span>，留空表示不调整
+          </p>
+        </div>
+        <div class="rounded-lg border divide-y">
+          <div
+            v-for="effortKey in effortRuleOrder"
+            :key="effortKey"
+            class="flex items-center gap-3 px-3 py-2"
+          >
+            <div class="min-w-0 flex-1">
+              <div class="text-sm font-medium">
+                {{ getEffortSourceLabel(effortKey) }}
+              </div>
+              <div class="text-xs text-muted-foreground">
+                {{ effortKey === '*' ? '兜底匹配所有未单独配置的 effort' : `当请求 effort 为 ${effortKey} 时生效` }}
+              </div>
+            </div>
+            <div class="w-44 shrink-0">
+              <Select
+                :model-value="getEffortRuleValue(effortKey)"
+                @update:model-value="setEffortRuleValue(effortKey, $event)"
+              >
+                <SelectTrigger class="h-9">
+                  <SelectValue placeholder="不调整" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">
+                    不调整
+                  </SelectItem>
+                  <SelectItem
+                    v-for="targetEffort in effortTargetOptions"
+                    :key="targetEffort"
+                    :value="targetEffort"
+                  >
+                    {{ targetEffort }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <template #footer>
@@ -274,6 +321,7 @@ export interface AliasGroup {
   model: Model
   /** @deprecated */
   apiFormatsKey: string
+  requestOverridesKey?: string
   /** @deprecated */
   apiFormats: string[]
   aliases: ProviderModelAlias[]
@@ -314,9 +362,14 @@ const upstreamModels = ref<UpstreamModel[]>([])
 // 表单数据
 const formData = ref<{
   modelId: string
+  reasoningEffortMap: Record<string, string>
 }>({
-  modelId: ''
+  modelId: '',
+  reasoningEffortMap: {}
 })
+
+const effortRuleOrder = ['*', 'low', 'medium', 'high', 'xhigh'] as const
+const effortTargetOptions = ['low', 'medium', 'high', 'xhigh'] as const
 
 // 选中的映射名称
 const selectedNames = ref<string[]>([])
@@ -477,15 +530,20 @@ watch(() => props.open, async (isOpen) => {
 // 初始化表单
 function initForm() {
   if (props.editingGroup) {
+    const firstAlias = props.editingGroup.aliases[0]
     formData.value = {
-      modelId: props.editingGroup.model.id
+      modelId: props.editingGroup.model.id,
+      reasoningEffortMap: normalizeReasoningEffortMap(
+        firstAlias?.request_overrides?.reasoning_effort_map
+      )
     }
     const existingNames = props.editingGroup.aliases.map(a => a.name)
     selectedNames.value = [...existingNames]
     allCustomNames.value = [...existingNames]
   } else {
     formData.value = {
-      modelId: props.preselectedModelId || ''
+      modelId: props.preselectedModelId || '',
+      reasoningEffortMap: {}
     }
     selectedNames.value = []
     allCustomNames.value = []
@@ -501,10 +559,51 @@ function handleModelChange(value: string) {
   formData.value.modelId = value
 }
 
+function normalizeReasoningEffortMap(
+  input?: Record<string, unknown> | null
+): Record<string, string> {
+  if (!input || typeof input !== 'object') return {}
+
+  const normalized: Record<string, string> = {}
+  for (const [rawSource, rawTarget] of Object.entries(input)) {
+    if (typeof rawTarget !== 'string') continue
+    const source = rawSource.trim().toLowerCase()
+    const target = rawTarget.trim().toLowerCase()
+    if (!source || !target) continue
+    normalized[source] = target
+  }
+  return normalized
+}
+
+function getEffortSourceLabel(effortKey: string): string {
+  return effortKey === '*' ? 'effort *' : `effort ${effortKey}`
+}
+
+function getEffortRuleValue(effortKey: string): string {
+  return formData.value.reasoningEffortMap[effortKey] || '__none__'
+}
+
+function setEffortRuleValue(effortKey: string, value: string) {
+  const nextMap = { ...formData.value.reasoningEffortMap }
+  if (!value || value === '__none__') {
+    delete nextMap[effortKey]
+  } else {
+    nextMap[effortKey] = value
+  }
+  formData.value.reasoningEffortMap = nextMap
+}
+
 // 生成作用域唯一键
 function getApiFormatsKey(formats: string[] | undefined): string {
   if (!formats || formats.length === 0) return ''
   return [...formats].sort().join(',')
+}
+
+function getRequestOverridesKey(alias: ProviderModelAlias): string {
+  const reasoningEffortMap = normalizeReasoningEffortMap(alias.request_overrides?.reasoning_effort_map)
+  const entries = Object.entries(reasoningEffortMap).sort(([a], [b]) => a.localeCompare(b))
+  if (entries.length === 0) return ''
+  return JSON.stringify(entries)
 }
 
 // 提交表单
@@ -524,19 +623,30 @@ async function handleSubmit() {
     let newAliases: ProviderModelAlias[]
 
     const buildAliases = (names: string[]): ProviderModelAlias[] => {
+      const reasoningEffortMap = normalizeReasoningEffortMap(formData.value.reasoningEffortMap)
+      const requestOverrides = Object.keys(reasoningEffortMap).length > 0
+        ? { reasoning_effort_map: reasoningEffortMap }
+        : undefined
       return names.map((name) => ({
         name: name.trim(),
-        priority: 1
+        priority: 1,
+        ...(requestOverrides ? { request_overrides: requestOverrides } : {})
       }))
     }
 
     if (props.editingGroup) {
       const oldApiFormatsKey = props.editingGroup.apiFormatsKey
+      const oldRequestOverridesKey = props.editingGroup.requestOverridesKey || ''
       const oldAliasNames = new Set(props.editingGroup.aliases.map(a => a.name))
 
       const filteredAliases = currentAliases.filter((a: ProviderModelAlias) => {
         const currentKey = getApiFormatsKey(a.api_formats)
-        return !(currentKey === oldApiFormatsKey && oldAliasNames.has(a.name))
+        const currentRequestOverridesKey = getRequestOverridesKey(a)
+        return !(
+          currentKey === oldApiFormatsKey
+          && currentRequestOverridesKey === oldRequestOverridesKey
+          && oldAliasNames.has(a.name)
+        )
       })
 
       const existingNames = new Set(filteredAliases.map((a: ProviderModelAlias) => a.name))

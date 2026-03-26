@@ -1720,32 +1720,23 @@ class Model(ExportMixin, Base):
 
         return result if result else None
 
-    def select_provider_model_name(
-        self, affinity_key: str | None = None, api_format: str | None = None
-    ) -> str:
-        """按优先级选择要使用的 Provider 模型名称
-
-        如果配置了 provider_model_mappings，按优先级选择（数字越小越优先）；
-        相同优先级的映射通过哈希分散实现负载均衡（与 Key 调度策略一致）；
-        否则返回 provider_model_name。
-
-        Args:
-            affinity_key: 用于哈希分散的亲和键（如用户 API Key 哈希），确保同一用户稳定选择同一映射
-            api_format: 当前请求的 endpoint signature（如 "openai:chat"），用于过滤适用的映射
-        """
-        import hashlib
-
+    def _normalize_provider_model_mappings(
+        self,
+        api_format: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """规范化 provider_model_mappings，保留可识别的扩展配置。"""
         if not self.provider_model_mappings:
-            return self.provider_model_name
+            return []
 
         raw_mappings = self.provider_model_mappings
         if not isinstance(raw_mappings, list) or len(raw_mappings) == 0:
-            return self.provider_model_name
+            return []
 
-        mappings: list[dict] = []
+        mappings: list[dict[str, Any]] = []
         for raw in raw_mappings:
             if not isinstance(raw, dict):
                 continue
+
             name = raw.get("name")
             if not isinstance(name, str) or not name.strip():
                 continue
@@ -1753,7 +1744,6 @@ class Model(ExportMixin, Base):
             # 检查 api_formats 作用域（如果配置了且当前有 api_format）
             mapping_api_formats = raw.get("api_formats")
             if api_format and mapping_api_formats:
-                # 如果配置了作用域，只有匹配时才生效
                 if isinstance(mapping_api_formats, list):
                     target = str(api_format).strip().lower()
                     allowed = {str(fmt).strip().lower() for fmt in mapping_api_formats if fmt}
@@ -1768,10 +1758,53 @@ class Model(ExportMixin, Base):
             if priority < 1:
                 priority = 1
 
-            mappings.append({"name": name.strip(), "priority": priority})
+            normalized_mapping: dict[str, Any] = {
+                "name": name.strip(),
+                "priority": priority,
+            }
 
+            if isinstance(mapping_api_formats, list):
+                normalized_mapping["api_formats"] = [
+                    str(fmt).strip() for fmt in mapping_api_formats if str(fmt).strip()
+                ]
+
+            request_overrides = raw.get("request_overrides")
+            if isinstance(request_overrides, dict):
+                normalized_request_overrides: dict[str, Any] = {}
+                reasoning_effort_map = request_overrides.get("reasoning_effort_map")
+                if isinstance(reasoning_effort_map, dict):
+                    normalized_effort_map: dict[str, str] = {}
+                    for source_effort, target_effort in reasoning_effort_map.items():
+                        if not isinstance(source_effort, str) or not isinstance(target_effort, str):
+                            continue
+                        source = source_effort.strip().lower()
+                        target = target_effort.strip().lower()
+                        if not source or not target:
+                            continue
+                        normalized_effort_map[source] = target
+                    if normalized_effort_map:
+                        normalized_request_overrides["reasoning_effort_map"] = (
+                            normalized_effort_map
+                        )
+
+                if normalized_request_overrides:
+                    normalized_mapping["request_overrides"] = normalized_request_overrides
+
+            mappings.append(normalized_mapping)
+
+        return mappings
+
+    def select_provider_model_mapping(
+        self,
+        affinity_key: str | None = None,
+        api_format: str | None = None,
+    ) -> dict[str, Any] | None:
+        """按优先级选择要使用的 Provider 模型映射配置。"""
+        import hashlib
+
+        mappings = self._normalize_provider_model_mappings(api_format=api_format)
         if not mappings:
-            return self.provider_model_name
+            return None
 
         # 按优先级排序（数字越小越优先）
         sorted_mappings = sorted(mappings, key=lambda x: x["priority"])
@@ -1799,7 +1832,19 @@ class Model(ExportMixin, Base):
         else:
             selected = top_priority_mappings[0]
 
-        return selected["name"]
+        return selected
+
+    def select_provider_model_name(
+        self, affinity_key: str | None = None, api_format: str | None = None
+    ) -> str:
+        """按优先级选择要使用的 Provider 模型名称。"""
+        selected = self.select_provider_model_mapping(
+            affinity_key=affinity_key,
+            api_format=api_format,
+        )
+        if selected and isinstance(selected.get("name"), str):
+            return selected["name"]
+        return self.provider_model_name
 
     def get_all_provider_model_names(self) -> list[str]:
         """获取所有可用的 Provider 模型名称（主名称 + 映射名称）"""

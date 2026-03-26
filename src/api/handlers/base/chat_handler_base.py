@@ -80,6 +80,7 @@ from src.models.database import (
     User,
 )
 from src.services.provider.behavior import get_provider_behavior
+from src.services.model.provider_model_mapping import apply_provider_model_request_overrides
 from src.services.provider.prompt_cache import (
     maybe_patch_request_with_prompt_cache_key,
 )
@@ -221,6 +222,28 @@ class ChatHandlerBase(BaseMessageHandler, ABC):
         return response
 
     # ==================== 统一接口方法 ====================
+
+    async def _get_selected_provider_model_mapping(
+        self,
+        source_model: str,
+        provider_id: str,
+        api_format: str | None = None,
+    ) -> dict[str, Any] | None:
+        """获取当前请求最终命中的 provider_model_mappings 项。"""
+        from src.services.model.mapper import ModelMapperMiddleware
+
+        mapper = ModelMapperMiddleware(self.db)
+        mapping = await mapper.get_mapping(source_model, provider_id)
+
+        if mapping and mapping.model:
+            affinity_key = self.api_key.id if self.api_key else None
+            effective_format = api_format or self.FORMAT_ID
+            return mapping.model.select_provider_model_mapping(
+                affinity_key,
+                api_format=effective_format,
+            )
+
+        return None
 
     def extract_model_from_request(
         self,
@@ -445,20 +468,13 @@ class ChatHandlerBase(BaseMessageHandler, ABC):
         Returns:
             映射后的 provider_model_name，没有映射则返回 None
         """
-        from src.services.model.mapper import ModelMapperMiddleware
-
-        mapper = ModelMapperMiddleware(self.db)
-        mapping = await mapper.get_mapping(source_model, provider_id)
-
-        if mapping and mapping.model:
-            # 使用 select_provider_model_name 支持映射功能
-            # 传入 api_key.id 作为 affinity_key，实现相同用户稳定选择同一映射
-            # 传入 api_format 用于过滤适用的映射作用域
-            affinity_key = self.api_key.id if self.api_key else None
-            effective_format = api_format or self.FORMAT_ID
-            mapped_name = mapping.model.select_provider_model_name(
-                affinity_key, api_format=effective_format
-            )
+        selected_mapping = await self._get_selected_provider_model_mapping(
+            source_model,
+            provider_id,
+            api_format=api_format,
+        )
+        if selected_mapping and isinstance(selected_mapping.get("name"), str):
+            mapped_name = selected_mapping["name"]
             logger.debug(f"[Chat] 模型映射: {source_model} -> {mapped_name}")
             return mapped_name
 
@@ -722,6 +738,12 @@ class ChatHandlerBase(BaseMessageHandler, ABC):
                 api_format=provider_api_format,
             )
 
+        selected_mapping = await self._get_selected_provider_model_mapping(
+            model,
+            str(provider.id),
+            api_format=provider_api_format,
+        )
+
         # `working_request_body` is already isolated per attempt.
         request_body = working_request_body
         if mapped_model:
@@ -796,6 +818,11 @@ class ChatHandlerBase(BaseMessageHandler, ABC):
                 )
 
         # 模型感知的请求后处理（如图像生成模型移除不兼容字段）
+        request_body = apply_provider_model_request_overrides(
+            request_body,
+            selected_mapping,
+            provider_api_format=str(provider_api_format) if provider_api_format else None,
+        )
         request_body = self.finalize_provider_request(
             request_body,
             mapped_model=mapped_model,

@@ -148,9 +148,17 @@
               :key="mapping.name"
               class="flex items-center justify-between gap-2 py-1"
             >
-              <span class="font-mono text-sm truncate">
-                {{ mapping.name }}
-              </span>
+              <div class="min-w-0 flex-1">
+                <div class="font-mono text-sm truncate">
+                  {{ mapping.name }}
+                </div>
+                <div
+                  v-if="mapping.overrideSummary"
+                  class="text-[11px] text-muted-foreground truncate"
+                >
+                  {{ mapping.overrideSummary }}
+                </div>
+              </div>
               <!-- 测试按钮（直连测试） -->
               <Button
                 variant="ghost"
@@ -370,6 +378,7 @@ interface MappingItem {
   name: string
   priority?: number
   pattern?: string
+  overrideSummary?: string
 }
 
 interface MatchedKeyInfo {
@@ -448,6 +457,38 @@ function getApiFormatsKey(formats: string[] | undefined): string {
   return [...formats].sort().join(',')
 }
 
+function normalizeReasoningEffortMap(input?: Record<string, unknown> | null): Record<string, string> {
+  if (!input || typeof input !== 'object') return {}
+
+  const normalized: Record<string, string> = {}
+  for (const [rawSource, rawTarget] of Object.entries(input)) {
+    if (typeof rawTarget !== 'string') continue
+    const source = rawSource.trim().toLowerCase()
+    const target = rawTarget.trim().toLowerCase()
+    if (!source || !target) continue
+    normalized[source] = target
+  }
+  return normalized
+}
+
+function getRequestOverridesKey(alias: ProviderModelAlias): string {
+  const reasoningEffortMap = normalizeReasoningEffortMap(alias.request_overrides?.reasoning_effort_map)
+  const entries = Object.entries(reasoningEffortMap).sort(([a], [b]) => a.localeCompare(b))
+  if (entries.length === 0) return ''
+  return JSON.stringify(entries)
+}
+
+function formatReasoningEffortSummary(alias: ProviderModelAlias): string | null {
+  const reasoningEffortMap = normalizeReasoningEffortMap(alias.request_overrides?.reasoning_effort_map)
+  const entries = Object.entries(reasoningEffortMap).sort(([a], [b]) => {
+    if (a === '*') return -1
+    if (b === '*') return 1
+    return a.localeCompare(b)
+  })
+  if (entries.length === 0) return null
+  return `effort: ${entries.map(([source, target]) => `${source} -> ${target}`).join('，')}`
+}
+
 // 精确映射分组（来自 provider_model_mappings）
 const exactMappingGroups = computed<AliasGroup[]>(() => {
   const groups: AliasGroup[] = []
@@ -458,12 +499,14 @@ const exactMappingGroups = computed<AliasGroup[]>(() => {
 
     for (const alias of model.provider_model_mappings) {
       const apiFormatsKey = getApiFormatsKey(alias.api_formats)
-      const groupKey = `${model.id}|${apiFormatsKey}`
+      const requestOverridesKey = getRequestOverridesKey(alias)
+      const groupKey = `${model.id}|${apiFormatsKey}|${requestOverridesKey}`
 
       if (!groupMap.has(groupKey)) {
         const group: AliasGroup = {
           model,
           apiFormatsKey,
+          requestOverridesKey,
           apiFormats: alias.api_formats || [],
           aliases: []
         }
@@ -547,7 +590,8 @@ const combinedMappings = computed<CombinedMapping[]>(() => {
       targetModelId: group.model.id,
       mappings: group.aliases.map(a => ({
         name: a.name,
-        priority: a.priority
+        priority: a.priority,
+        overrideSummary: formatReasoningEffortSummary(a) || undefined
       })),
       group
     })
@@ -632,14 +676,19 @@ function deleteGroup(group: AliasGroup) {
 async function confirmDelete() {
   if (!deletingGroup.value) return
 
-  const { model, aliases, apiFormatsKey } = deletingGroup.value
+  const { model, aliases, apiFormatsKey, requestOverridesKey } = deletingGroup.value
 
   try {
     const currentAliases = model.provider_model_mappings || []
     const aliasNamesToRemove = new Set(aliases.map(a => a.name))
     const newAliases = currentAliases.filter((a: ProviderModelAlias) => {
       const currentKey = getApiFormatsKey(a.api_formats)
-      return !(currentKey === apiFormatsKey && aliasNamesToRemove.has(a.name))
+      const currentOverridesKey = getRequestOverridesKey(a)
+      return !(
+        currentKey === apiFormatsKey
+        && currentOverridesKey === (requestOverridesKey || '')
+        && aliasNamesToRemove.has(a.name)
+      )
     })
 
     await updateModel(props.provider.id, model.id, {
