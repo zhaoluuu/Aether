@@ -563,35 +563,35 @@
           </div>
         </div>
 
-        <div class="grid gap-3 sm:grid-cols-3">
+        <div class="grid gap-3 md:grid-cols-3">
           <button
             v-for="option in ccSwitchClientOptions"
             :key="option.value"
             type="button"
-            class="rounded-xl border px-4 py-4 text-left transition-all"
+            class="h-full rounded-xl border px-4 py-4 text-left transition-all"
             :class="selectedCcSwitchClient === option.value
               ? 'border-primary bg-primary/5 shadow-sm'
               : 'border-border/60 bg-background hover:border-primary/40 hover:bg-muted/20'"
             @click="selectedCcSwitchClient = option.value"
           >
-            <div class="flex items-start gap-3">
-              <div
-                class="flex h-10 w-10 items-center justify-center rounded-lg shrink-0"
-                :class="option.iconBgClass"
-              >
-                <component
-                  :is="option.icon"
-                  class="h-5 w-5"
-                  :class="option.iconClass"
-                />
-              </div>
-              <div class="min-w-0">
-                <div class="text-sm font-semibold text-foreground">
+            <div class="flex h-full flex-col gap-3">
+              <div class="flex items-center gap-3">
+                <div
+                  class="flex h-10 w-10 items-center justify-center rounded-lg shrink-0"
+                  :class="option.iconBgClass"
+                >
+                  <component
+                    :is="option.icon"
+                    class="h-5 w-5"
+                    :class="option.iconClass"
+                  />
+                </div>
+                <div class="min-w-0 text-sm font-semibold text-foreground">
                   {{ option.label }}
                 </div>
-                <div class="mt-1 text-xs text-muted-foreground leading-5">
-                  {{ option.description }}
-                </div>
+              </div>
+              <div class="text-xs leading-5 text-muted-foreground text-pretty">
+                {{ option.description }}
               </div>
             </div>
           </button>
@@ -664,6 +664,7 @@ import { log } from '@/utils/logger'
 import { parseApiError } from '@/utils/errorParser'
 import { formatRateLimitSimple } from '@/utils/format'
 import { parseNumberInput } from '@/utils/form'
+import { buildUsageStatusUrl } from '@/utils/url'
 import { getErrorStatus } from '@/types/api-error'
 
 const { success, error: showError } = useToast()
@@ -705,6 +706,10 @@ const ccSwitchClientOptions = [
     value: 'claude' as const,
     label: 'Claude',
     description: '导入为 Claude Code 使用的提供商配置',
+    defaultModel: 'claude-sonnet-4-6',
+    haikuModel: 'claude-haiku-4-5-20251001',
+    sonnetModel: 'claude-sonnet-4-6',
+    opusModel: 'claude-opus-4-6',
     icon: Bot,
     iconBgClass: 'bg-orange-100 dark:bg-orange-900/30',
     iconClass: 'text-orange-600 dark:text-orange-400',
@@ -713,6 +718,7 @@ const ccSwitchClientOptions = [
     value: 'gemini' as const,
     label: 'Gemini',
     description: '导入为 Gemini CLI 使用的提供商配置',
+    defaultModel: 'gemini-3.1-pro-preview',
     icon: Sparkles,
     iconBgClass: 'bg-sky-100 dark:bg-sky-900/30',
     iconClass: 'text-sky-600 dark:text-sky-400',
@@ -721,6 +727,7 @@ const ccSwitchClientOptions = [
     value: 'codex' as const,
     label: 'Codex',
     description: '导入为 Codex CLI 使用的提供商配置',
+    defaultModel: 'gpt-5.3-codex',
     icon: Terminal,
     iconBgClass: 'bg-emerald-100 dark:bg-emerald-900/30',
     iconClass: 'text-emerald-600 dark:text-emerald-400',
@@ -849,6 +856,20 @@ function closeCcSwitchDialog() {
   selectedCcSwitchClient.value = 'claude'
 }
 
+function getCcSwitchModelParams(client: 'claude' | 'gemini' | 'codex'): Record<string, string> {
+  const option = ccSwitchClientOptions.find(item => item.value === client)
+  if (!option) return {}
+
+  const params: Record<string, string> = {}
+
+  if (option.defaultModel) params.model = option.defaultModel
+  if (option.haikuModel) params.haikuModel = option.haikuModel
+  if (option.sonnetModel) params.sonnetModel = option.sonnetModel
+  if (option.opusModel) params.opusModel = option.opusModel
+
+  return params
+}
+
 async function deleteApiKey() {
   if (!keyToDelete.value) return
 
@@ -901,9 +922,11 @@ async function confirmCcSwitchImport() {
     const baseUrl = window.location.origin
     const endpoint = selectedCcSwitchClient.value === 'codex' ? `${baseUrl}/v1` : baseUrl
     const providerName = `${(siteName.value || 'Aether').trim() || 'Aether'} - ${ccSwitchTargetKey.value.name}`
+    const usageUrl = buildUsageStatusUrl(endpoint, '{{baseUrl}}')
+    const modelParams = getCcSwitchModelParams(selectedCcSwitchClient.value)
     const usageScript = `({
       request: {
-        url: "{{baseUrl}}/v1/usage",
+        url: "${usageUrl}",
         method: "GET",
         headers: { "Authorization": "Bearer {{apiKey}}" }
       },
@@ -923,6 +946,7 @@ async function confirmCcSwitchImport() {
       homepage: baseUrl,
       endpoint,
       apiKey: apiKeyValue,
+      ...modelParams,
       configFormat: 'json',
       usageEnabled: 'true',
       usageScript: btoa(usageScript),
