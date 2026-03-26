@@ -194,6 +194,7 @@ def _create_my_api_key_sync(user_id: str, request: CreateMyApiKeyRequest) -> dic
                 user_id=user_id,
                 name=request.name,
                 rate_limit=request.rate_limit,
+                allowed_models=request.allowed_models,
             )
         except ValueError as exc:
             raise InvalidRequestException(str(exc)) from exc
@@ -203,6 +204,7 @@ def _create_my_api_key_sync(user_id: str, request: CreateMyApiKeyRequest) -> dic
             "key": plain_key,
             "key_display": api_key.get_display_key(),
             "rate_limit": api_key.rate_limit,
+            "allowed_models": api_key.allowed_models,
             "message": "API密钥创建成功",
         }
 
@@ -274,6 +276,7 @@ def _update_my_api_key_sync(
             "is_locked": updated.is_locked,
             "force_capabilities": updated.force_capabilities,
             "rate_limit": updated.rate_limit,
+            "allowed_models": updated.allowed_models,
             "last_used_at": updated.last_used_at.isoformat() if updated.last_used_at else None,
             "expires_at": updated.expires_at.isoformat() if updated.expires_at else None,
             "created_at": updated.created_at.isoformat(),
@@ -889,6 +892,7 @@ class ListMyApiKeysAdapter(AuthenticatedApiAdapter):
                     "total_requests": real_stats["total_requests"],
                     "total_cost_usd": real_stats["total_cost_usd"],
                     "rate_limit": key.rate_limit,
+                    "allowed_models": key.allowed_models,
                     "force_capabilities": key.force_capabilities,
                 }
             )
@@ -969,6 +973,7 @@ class GetMyApiKeyDetailAdapter(AuthenticatedApiAdapter):
             "is_locked": api_key.is_locked,
             "force_capabilities": api_key.force_capabilities,
             "rate_limit": api_key.rate_limit,
+            "allowed_models": api_key.allowed_models,
             "last_used_at": api_key.last_used_at.isoformat() if api_key.last_used_at else None,
             "expires_at": api_key.expires_at.isoformat() if api_key.expires_at else None,
             "created_at": api_key.created_at.isoformat(),

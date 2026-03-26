@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from src.models.database import Model, Provider, ProviderAPIKey
+from src.models.database import ApiKey, GlobalModel, Model, Provider, ProviderAPIKey
 from src.services.model.global_model import GlobalModelService
 
 
@@ -91,4 +91,39 @@ def test_auto_disassociate_deletes_unmatched_auto_associated_models(
         }
     ]
     db.delete.assert_called_once_with(model)
+    db.commit.assert_called_once()
+
+
+def test_delete_global_model_removes_model_from_api_key_allowed_models() -> None:
+    db = MagicMock()
+    global_model = SimpleNamespace(id="gm-1", name="gpt-4o")
+    kept_key = SimpleNamespace(id="key-1", allowed_models=["claude-3-7-sonnet"])
+    trimmed_key = SimpleNamespace(id="key-2", allowed_models=["gpt-4o", "gpt-4o-mini"])
+    emptied_key = SimpleNamespace(id="key-3", allowed_models=["gpt-4o"])
+
+    global_model_query = MagicMock()
+    global_model_query.filter.return_value.first.return_value = global_model
+
+    api_key_query = MagicMock()
+    api_key_query.filter.return_value.all.return_value = [kept_key, trimmed_key, emptied_key]
+
+    count_query = MagicMock()
+    count_query.filter.return_value.scalar.return_value = 0
+
+    def _query(*entities: object) -> MagicMock:
+        entity = entities[0]
+        if entity is GlobalModel:
+            return global_model_query
+        if entity is ApiKey:
+            return api_key_query
+        return count_query
+
+    db.query.side_effect = _query
+
+    GlobalModelService.delete_global_model(db, "gm-1")
+
+    assert kept_key.allowed_models == ["claude-3-7-sonnet"]
+    assert trimmed_key.allowed_models == ["gpt-4o-mini"]
+    assert emptied_key.allowed_models == []
+    db.delete.assert_called_once_with(global_model)
     db.commit.assert_called_once()

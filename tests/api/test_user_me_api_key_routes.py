@@ -49,7 +49,13 @@ async def _fake_update_my_api_key_sync(
     captured["key_id"] = key_id
     captured["name"] = getattr(request, "name", None)
     captured["rate_limit"] = getattr(request, "rate_limit", None)
-    return {"id": key_id, "name": captured["name"], "rate_limit": captured["rate_limit"]}
+    captured["allowed_models"] = getattr(request, "allowed_models", None)
+    return {
+        "id": key_id,
+        "name": captured["name"],
+        "rate_limit": captured["rate_limit"],
+        "allowed_models": captured["allowed_models"],
+    }
 
 
 def test_update_my_api_key_route_path_smoke(monkeypatch: Any) -> None:
@@ -60,20 +66,31 @@ def test_update_my_api_key_route_path_smoke(monkeypatch: Any) -> None:
         captured["key_id"] = key_id
         captured["name"] = getattr(request, "name", None)
         captured["rate_limit"] = getattr(request, "rate_limit", None)
-        return {"id": key_id, "name": captured["name"], "rate_limit": captured["rate_limit"]}
+        captured["allowed_models"] = getattr(request, "allowed_models", None)
+        return {
+            "id": key_id,
+            "name": captured["name"],
+            "rate_limit": captured["rate_limit"],
+            "allowed_models": captured["allowed_models"],
+        }
 
     monkeypatch.setattr("src.api.user_me.routes._update_my_api_key_sync", _sync)
     client = _build_me_app(MagicMock(), monkeypatch)
 
-    response = client.put("/api/users/me/api-keys/key-1", json={"name": "Edited", "rate_limit": 6})
+    response = client.put(
+        "/api/users/me/api-keys/key-1",
+        json={"name": "Edited", "rate_limit": 6, "allowed_models": ["gpt-4o-mini", "gpt-4o"]},
+    )
 
     assert response.status_code == 200
     assert response.json()["rate_limit"] == 6
+    assert response.json()["allowed_models"] == ["gpt-4o-mini", "gpt-4o"]
     assert captured == {
         "user_id": "user-1",
         "key_id": "key-1",
         "name": "Edited",
         "rate_limit": 6,
+        "allowed_models": ["gpt-4o-mini", "gpt-4o"],
     }
 
 
@@ -86,7 +103,13 @@ async def test_update_my_api_key_adapter_passes_rate_limit_and_name(monkeypatch:
         captured["key_id"] = key_id
         captured["name"] = getattr(request, "name", None)
         captured["rate_limit"] = getattr(request, "rate_limit", None)
-        return {"id": key_id, "name": captured["name"], "rate_limit": captured["rate_limit"]}
+        captured["allowed_models"] = getattr(request, "allowed_models", None)
+        return {
+            "id": key_id,
+            "name": captured["name"],
+            "rate_limit": captured["rate_limit"],
+            "allowed_models": captured["allowed_models"],
+        }
 
     monkeypatch.setattr("src.api.user_me.routes._update_my_api_key_sync", _sync)
 
@@ -95,7 +118,11 @@ async def test_update_my_api_key_adapter_passes_rate_limit_and_name(monkeypatch:
         db=MagicMock(),
         user=SimpleNamespace(id="user-1"),
         request=SimpleNamespace(state=SimpleNamespace()),
-        ensure_json_body=lambda: {"name": "Edited Again", "rate_limit": 15},
+        ensure_json_body=lambda: {
+            "name": "Edited Again",
+            "rate_limit": 15,
+            "allowed_models": ["gpt-4o", "gpt-4o"],
+        },
         add_audit_metadata=lambda **_: None,
     )
 
@@ -107,4 +134,5 @@ async def test_update_my_api_key_adapter_passes_rate_limit_and_name(monkeypatch:
         "key_id": "key-2",
         "name": "Edited Again",
         "rate_limit": 15,
+        "allowed_models": ["gpt-4o"],
     }

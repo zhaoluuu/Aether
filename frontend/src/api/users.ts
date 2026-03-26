@@ -53,6 +53,7 @@ export interface ApiKey {
   is_locked: boolean  // 管理员锁定标志
   is_standalone: boolean  // 是否为独立余额Key
   rate_limit?: number | null  // 普通Key: 0 = 不限制，历史 null 视为跟随系统默认
+  allowed_models?: string[] | null
   total_requests?: number  // 总请求数
   total_cost_usd?: number  // 总费用
 }
@@ -60,6 +61,7 @@ export interface ApiKey {
 export interface UpsertUserApiKeyRequest {
   name?: string
   rate_limit?: number | null
+  allowed_models?: string[] | null
 }
 
 export type { UserSession } from '@/types/session'

@@ -292,6 +292,7 @@ def _create_user_key_sync(
                 "name": api_key.name,
                 "key_display": api_key.get_display_key(),
                 "rate_limit": api_key.rate_limit,
+                "allowed_models": api_key.allowed_models,
                 "expires_at": api_key.expires_at.isoformat() if api_key.expires_at else None,
                 "created_at": api_key.created_at.isoformat(),
                 "message": "API Key创建成功，请妥善保存完整密钥",
@@ -367,6 +368,7 @@ def _update_user_key_sync(
                 "total_requests": updated_key.total_requests,
                 "total_cost_usd": float(updated_key.total_cost_usd or 0),
                 "rate_limit": updated_key.rate_limit,
+                "allowed_models": updated_key.allowed_models,
                 "expires_at": (
                     updated_key.expires_at.isoformat() if updated_key.expires_at else None
                 ),
@@ -859,6 +861,7 @@ class AdminGetUserKeysAdapter(AdminApiAdapter):
                     "total_requests": key.total_requests,
                     "total_cost_usd": float(key.total_cost_usd or 0),
                     "rate_limit": key.rate_limit,
+                    "allowed_models": key.allowed_models,
                     "expires_at": key.expires_at.isoformat() if key.expires_at else None,
                     "last_used_at": key.last_used_at.isoformat() if key.last_used_at else None,
                     "created_at": key.created_at.isoformat(),

@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, joinedload, load_only
 
 from src.core.exceptions import InvalidRequestException, NotFoundException
 from src.core.logger import logger
-from src.models.database import GlobalModel, Model
+from src.models.database import ApiKey, GlobalModel, Model
 from src.models.pydantic_models import GlobalModelUpdate
 
 
@@ -196,10 +196,33 @@ class GlobalModelService:
         删除 GlobalModel
 
         默认行为: 级联删除所有关联的 Provider 模型实现
-        注意: 不清理 API Key 和 User 的 allowed_models 引用，
-        保留无效引用可让用户在前端看到"已失效"的模型，便于手动清理或等待重建同名模型
+        同时会从所有包含该模型名的 API Key.allowed_models 中移除该模型，
+        避免删除模型后继续保留失效的 Key 级模型白名单引用。
         """
         global_model = GlobalModelService.get_global_model(db, global_model_id)
+        global_model_name = global_model.name
+
+        keys_updated = 0
+        api_keys = db.query(ApiKey).filter(ApiKey.allowed_models.isnot(None)).all()
+        for api_key in api_keys:
+            allowed_models = api_key.allowed_models
+            if not isinstance(allowed_models, list) or global_model_name not in allowed_models:
+                continue
+
+            filtered_models = [
+                model_name
+                for model_name in allowed_models
+                if isinstance(model_name, str) and model_name != global_model_name
+            ]
+            api_key.allowed_models = filtered_models
+            keys_updated += 1
+
+        if keys_updated:
+            logger.info(
+                "删除 GlobalModel {} 前，已从 {} 个 API Key 的 allowed_models 中移除该模型",
+                global_model_name,
+                keys_updated,
+            )
 
         # 批量删除所有关联的 Provider 模型实现
         assoc_count = (

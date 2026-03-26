@@ -114,6 +114,9 @@
                   <div class="text-xs text-muted-foreground mt-0.5">
                     创建于 {{ formatDate(apiKey.created_at) }}
                   </div>
+                  <div class="text-xs text-muted-foreground mt-0.5">
+                    {{ formatModelRestrictionSummary(apiKey.allowed_models) }}
+                  </div>
                 </div>
               </TableCell>
 
@@ -324,6 +327,10 @@
                 <span class="text-muted-foreground">
                   {{ formatRateLimitSimple(apiKey.rate_limit) }}
                 </span>
+                <span class="text-muted-foreground">•</span>
+                <span class="text-muted-foreground">
+                  {{ formatModelRestrictionSummary(apiKey.allowed_models) }}
+                </span>
               </div>
             </div>
           </div>
@@ -355,7 +362,7 @@
                 {{ editingApiKey ? '编辑 API 密钥' : '创建 API 密钥' }}
               </h3>
               <p class="text-xs text-muted-foreground">
-                {{ editingApiKey ? '更新密钥名称和速率限制' : '创建一个新的密钥用于访问 API 服务' }}
+                {{ editingApiKey ? '更新密钥名称、速率限制和模型权限' : '创建一个新的密钥用于访问 API 服务' }}
               </p>
             </div>
           </div>
@@ -398,6 +405,31 @@
           />
           <p class="text-xs text-muted-foreground">
             留空不限
+          </p>
+        </div>
+
+        <div class="space-y-2">
+          <Label class="text-sm font-semibold">允许的模型</Label>
+          <div class="flex items-center gap-3">
+            <div class="flex-1 min-w-0">
+              <MultiSelect
+                v-model="newKeyAllowedModels"
+                :options="modelOptions"
+                :search-threshold="0"
+                :disabled="newKeyModelUnrestricted"
+                :placeholder="newKeyModelUnrestricted ? '不限制' : '未选择（全部禁用）'"
+                empty-text="暂无可用模型"
+                no-results-text="未找到匹配的模型"
+                search-placeholder="输入模型名搜索..."
+              />
+            </div>
+            <Switch
+              v-model="newKeyModelUnrestricted"
+              class="shrink-0"
+            />
+          </div>
+          <p class="text-xs text-muted-foreground">
+            默认不限制；关闭右侧开关后可多选模型，不在列表中的模型将无法通过该 Key 调用
           </p>
         </div>
       </div>
@@ -493,15 +525,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { meApi, type ApiKey } from '@/api/me'
 import Card from '@/components/ui/card.vue'
 import Button from '@/components/ui/button.vue'
 import Input from '@/components/ui/input.vue'
 import Label from '@/components/ui/label.vue'
 import Badge from '@/components/ui/badge.vue'
-import { Dialog, Pagination } from '@/components/ui'
-import { LoadingState, AlertDialog, EmptyState } from '@/components/common'
+import { Dialog, Pagination, Switch } from '@/components/ui'
+import { LoadingState, AlertDialog, EmptyState, MultiSelect } from '@/components/common'
 import {
   Table,
   TableBody,
@@ -518,7 +550,6 @@ import { parseApiError } from '@/utils/errorParser'
 import { formatRateLimitSimple } from '@/utils/format'
 import { parseNumberInput } from '@/utils/form'
 import { getErrorStatus } from '@/types/api-error'
-import { computed } from 'vue'
 
 const { success, error: showError } = useToast()
 
@@ -542,9 +573,12 @@ const showDeleteDialog = ref(false)
 
 const newKeyName = ref('')
 const newKeyRateLimit = ref<number | undefined>(undefined)
+const newKeyAllowedModels = ref<string[]>([])
+const newKeyModelUnrestricted = ref(true)
 const newKeyValue = ref('')
 const keyToDelete = ref<ApiKey | null>(null)
 const editingApiKey = ref<ApiKey | null>(null)
+const modelOptions = ref<Array<{ value: string; label: string }>>([])
 
 onMounted(() => {
   loadApiKeys()
@@ -569,10 +603,31 @@ async function loadApiKeys() {
   }
 }
 
+async function loadModelOptions() {
+  try {
+    const response = await meApi.getAvailableModels({ limit: 1000 })
+    modelOptions.value = (response.models || [])
+      .map((model) => ({
+        value: model.name,
+        label:
+          model.display_name?.trim() && model.display_name.trim() !== model.name
+            ? `${model.display_name.trim()} (${model.name})`
+            : model.name,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'))
+  } catch (error: unknown) {
+    log.error('加载可选模型失败:', error)
+    showError(parseApiError(error, '加载模型列表失败'))
+  }
+}
+
 function openEditApiKeyDialog(apiKey: ApiKey) {
   editingApiKey.value = apiKey
   newKeyName.value = apiKey.name || ''
   newKeyRateLimit.value = apiKey.rate_limit ?? undefined
+  newKeyAllowedModels.value = apiKey.allowed_models ? [...apiKey.allowed_models] : []
+  newKeyModelUnrestricted.value = apiKey.allowed_models == null
+  void loadModelOptions()
   showCreateDialog.value = true
 }
 
@@ -580,6 +635,9 @@ function openCreateApiKeyDialog() {
   editingApiKey.value = null
   newKeyName.value = ''
   newKeyRateLimit.value = undefined
+  newKeyAllowedModels.value = []
+  newKeyModelUnrestricted.value = true
+  void loadModelOptions()
   showCreateDialog.value = true
 }
 
@@ -588,6 +646,8 @@ function closeApiKeyDialog() {
   editingApiKey.value = null
   newKeyName.value = ''
   newKeyRateLimit.value = undefined
+  newKeyAllowedModels.value = []
+  newKeyModelUnrestricted.value = true
 }
 
 async function saveApiKey() {
@@ -602,12 +662,14 @@ async function saveApiKey() {
       await meApi.updateApiKey(editingApiKey.value.id, {
         name: newKeyName.value,
         rate_limit: newKeyRateLimit.value ?? 0,
+        allowed_models: newKeyModelUnrestricted.value ? null : [...newKeyAllowedModels.value],
       })
       success('API 密钥更新成功')
     } else {
       const newKey = await meApi.createApiKey({
         name: newKeyName.value,
         rate_limit: newKeyRateLimit.value ?? 0,
+        allowed_models: newKeyModelUnrestricted.value ? null : [...newKeyAllowedModels.value],
       })
       newKeyValue.value = newKey.key || ''
       showKeyDialog.value = true
@@ -734,6 +796,13 @@ function formatRelativeTime(dateString: string): string {
   if (diffDays < 7) return `${diffDays}天前`
 
   return formatDate(dateString)
+}
+
+function formatModelRestrictionSummary(allowedModels?: string[] | null): string {
+  if (allowedModels == null) {
+    return '全部模型'
+  }
+  return `已限制 ${allowedModels.length} 个模型`
 }
 
 </script>

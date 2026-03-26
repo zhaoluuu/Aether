@@ -795,7 +795,7 @@
                 {{ editingUserApiKey ? '编辑 API Key' : '创建 API Key' }}
               </h3>
               <p class="text-xs text-muted-foreground">
-                {{ editingUserApiKey ? '更新用户 API Key 的名称和速率限制' : '为用户创建新的 API Key' }}
+                {{ editingUserApiKey ? '更新用户 API Key 的名称、速率限制和模型权限' : '为用户创建新的 API Key' }}
               </p>
             </div>
           </div>
@@ -832,6 +832,30 @@
           />
           <p class="text-xs text-muted-foreground">
             留空表示不限制
+          </p>
+        </div>
+        <div class="space-y-2">
+          <Label class="text-sm font-medium">允许的模型</Label>
+          <div class="flex items-center gap-3">
+            <div class="flex-1 min-w-0">
+              <MultiSelect
+                v-model="userApiKeyForm.allowed_models"
+                :options="userApiKeyModelOptions"
+                :search-threshold="0"
+                :disabled="userApiKeyForm.model_unrestricted"
+                :placeholder="userApiKeyForm.model_unrestricted ? '不限制' : '未选择（全部禁用）'"
+                empty-text="暂无可用模型"
+                no-results-text="未找到匹配的模型"
+                search-placeholder="输入模型名搜索..."
+              />
+            </div>
+            <Switch
+              v-model="userApiKeyForm.model_unrestricted"
+              class="shrink-0"
+            />
+          </div>
+          <p class="text-xs text-muted-foreground">
+            默认不限制；关闭开关后可多选模型，不在列表中的模型不会允许该 Key 调用
           </p>
         </div>
       </div>
@@ -1021,6 +1045,7 @@ import { useConfirm } from '@/composables/useConfirm'
 import { useClipboard } from '@/composables/useClipboard'
 import { analyticsApi } from '@/api/analytics'
 import { adminApi } from '@/api/admin'
+import { getGlobalModels } from '@/api/global-models'
 import { walletStatusBadge, walletStatusLabel } from '@/utils/walletDisplay'
 
 // UI 组件
@@ -1045,8 +1070,10 @@ import {
   Avatar,
   AvatarFallback,
   Pagination,
-  RefreshButton
+  RefreshButton,
+  Switch,
 } from '@/components/ui'
+import { MultiSelect } from '@/components/common'
 
 import {
   Plus,
@@ -1099,7 +1126,10 @@ const editingUserApiKey = ref<ApiKey | null>(null)
 const userApiKeyForm = ref({
   name: '',
   rate_limit: undefined as number | undefined,
+  model_unrestricted: true,
+  allowed_models: [] as string[],
 })
+const userApiKeyModelOptions = ref<Array<{ value: string; label: string }>>([])
 
 // 用户统计
 interface UserUsageSummary {
@@ -1406,12 +1436,33 @@ async function loadUserApiKeys(userId: string) {
   }
 }
 
+async function loadUserApiKeyModelOptions() {
+  try {
+    const response = await getGlobalModels({ limit: 1000, is_active: true })
+    userApiKeyModelOptions.value = (response.models || [])
+      .map((model) => ({
+        value: model.name,
+        label:
+          model.display_name?.trim() && model.display_name.trim() !== model.name
+            ? `${model.display_name.trim()} (${model.name})`
+            : model.name,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'))
+  } catch (err: unknown) {
+    log.error('加载用户 API Key 模型列表失败:', err)
+    error(parseApiError(err, '加载模型列表失败'))
+  }
+}
+
 function openCreateUserApiKeyDialog() {
   userApiKeyForm.value = {
     name: `Key-${new Date().toISOString().split('T')[0]}`,
     rate_limit: undefined,
+    model_unrestricted: true,
+    allowed_models: [],
   }
   editingUserApiKey.value = null
+  void loadUserApiKeyModelOptions()
   showUserApiKeyFormDialog.value = true
 }
 
@@ -1420,7 +1471,10 @@ function openEditUserApiKeyDialog(apiKey: ApiKey) {
   userApiKeyForm.value = {
     name: apiKey.name || '',
     rate_limit: apiKey.rate_limit ?? undefined,
+    model_unrestricted: apiKey.allowed_models == null,
+    allowed_models: apiKey.allowed_models ? [...apiKey.allowed_models] : [],
   }
+  void loadUserApiKeyModelOptions()
   showUserApiKeyFormDialog.value = true
 }
 
@@ -1430,6 +1484,8 @@ function closeUserApiKeyFormDialog() {
   userApiKeyForm.value = {
     name: '',
     rate_limit: undefined,
+    model_unrestricted: true,
+    allowed_models: [],
   }
 }
 
@@ -1446,12 +1502,14 @@ async function submitUserApiKeyForm() {
       await usersStore.updateApiKey(selectedUser.value.id, editingUserApiKey.value.id, {
         name: userApiKeyForm.value.name,
         rate_limit: userApiKeyForm.value.rate_limit ?? 0,
+        allowed_models: userApiKeyForm.value.model_unrestricted ? null : [...userApiKeyForm.value.allowed_models],
       })
       success('API Key已更新')
     } else {
       const response = await usersStore.createApiKey(selectedUser.value.id, {
         name: userApiKeyForm.value.name,
         rate_limit: userApiKeyForm.value.rate_limit ?? 0,
+        allowed_models: userApiKeyForm.value.model_unrestricted ? null : [...userApiKeyForm.value.allowed_models],
       })
       newApiKey.value = response.key || ''
       showNewApiKeyDialog.value = true

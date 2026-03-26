@@ -14,6 +14,28 @@ from ..core.enums import UserRole
 from ..core.validators import PasswordValidator
 
 
+def _normalize_string_list(
+    values: list[str] | None,
+    *,
+    field_name: str,
+) -> list[str] | None:
+    """去空、去重并保留顺序。"""
+    if values is None:
+        return None
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        if not isinstance(item, str):
+            raise ValueError(f"{field_name} 列表元素必须为字符串")
+        value = item.strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        normalized.append(value)
+    return normalized
+
+
 # ========== 认证相关 ==========
 class LoginRequest(BaseModel):
     """登录请求"""
@@ -345,6 +367,11 @@ class UpdateUserRequest(BaseModel):
         # 与 CreateUserRequest 保持一致
         return CreateUserRequest.validate_allowed_api_formats(v)
 
+    @field_validator("allowed_models")
+    @classmethod
+    def validate_allowed_models(cls, v: list[str] | None) -> list[str] | None:
+        return _normalize_string_list(v, field_name="allowed_models")
+
     @field_validator("password")
     @classmethod
     def validate_password(cls, v: str | None) -> str | None:
@@ -383,6 +410,11 @@ class CreateApiKeyRequest(BaseModel):
     def validate_allowed_api_formats(cls, v: list[str] | None) -> list[str] | None:
         # 与 CreateUserRequest 保持一致
         return CreateUserRequest.validate_allowed_api_formats(v)
+
+    @field_validator("allowed_models")
+    @classmethod
+    def validate_allowed_models(cls, v: list[str] | None) -> list[str] | None:
+        return _normalize_string_list(v, field_name="allowed_models")
 
 
 class UserResponse(BaseModel):
@@ -845,6 +877,15 @@ class CreateMyApiKeyRequest(BaseModel):
 
     name: str
     rate_limit: int = Field(0, ge=0, description="该 Key 的每分钟请求限制，0 表示不限制")
+    allowed_models: list[str] | None = Field(
+        default=None,
+        description="允许使用的模型名称列表，null 表示不限制",
+    )
+
+    @field_validator("allowed_models")
+    @classmethod
+    def validate_allowed_models(cls, v: list[str] | None) -> list[str] | None:
+        return _normalize_string_list(v, field_name="allowed_models")
 
 
 class UpdateMyApiKeyRequest(BaseModel):
@@ -856,6 +897,15 @@ class UpdateMyApiKeyRequest(BaseModel):
         ge=0,
         description="该 Key 的每分钟请求限制；0 表示不限制，null 表示不修改",
     )
+    allowed_models: list[str] | None = Field(
+        default=None,
+        description="允许使用的模型名称列表；null 表示不限制，未传表示不修改",
+    )
+
+    @field_validator("allowed_models")
+    @classmethod
+    def validate_allowed_models(cls, v: list[str] | None) -> list[str] | None:
+        return _normalize_string_list(v, field_name="allowed_models")
 
 
 # ========== 公告相关模型 ==========
