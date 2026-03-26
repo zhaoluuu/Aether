@@ -15,6 +15,7 @@ from src.api.public.models import (
     _build_openai_model_response,
 )
 from src.api.public.system_catalog import router as public_system_router
+from src.api.public.usage import router as public_usage_router
 from src.api.base.models_service import sanitize_public_global_model_config
 from src.api.user_me.routes import GetPreferencesAdapter
 from src.api.user_me.routes import router as me_router
@@ -158,6 +159,72 @@ def test_hidden_user_and_public_provider_routes_return_404() -> None:
     assert "available_providers" not in root_payload
     assert "providers" not in root_payload["endpoints"]
     assert "test_connection" not in root_payload["endpoints"]
+
+
+def test_public_usage_missing_bearer_returns_inactive_payload() -> None:
+    app = FastAPI()
+    app.include_router(public_usage_router)
+    app.dependency_overrides[get_db] = lambda: MagicMock()
+    client = TestClient(app)
+
+    response = client.get("/v1/usage")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "missing_api_key",
+        "reason": "missing_api_key",
+        "is_active": False,
+        "is_valid": False,
+        "quota_exhausted": False,
+        "remaining": None,
+        "balance": None,
+        "unit": "USD",
+        "message": "未提供有效的 Bearer API Key",
+    }
+
+
+def test_public_usage_reports_quota_exhausted_without_touching_auth_flow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = FastAPI()
+    app.include_router(public_usage_router)
+    app.dependency_overrides[get_db] = lambda: MagicMock()
+    client = TestClient(app)
+
+    key_record = SimpleNamespace(
+        is_active=True,
+        is_locked=False,
+        is_standalone=False,
+        expires_at=None,
+        user=SimpleNamespace(is_active=True, is_deleted=False),
+    )
+    monkeypatch.setattr(
+        "src.api.public.usage._load_api_key_record_for_usage",
+        lambda _db, _raw_api_key: key_record,
+    )
+    monkeypatch.setattr(
+        "src.api.public.usage.UsageQueryMixin.check_request_balance_details",
+        lambda _db, _user, estimated_tokens=0, estimated_cost=0, api_key=None: SimpleNamespace(
+            allowed=False,
+            message="余额不足（剩余: $0.00）",
+            remaining=0.0,
+        ),
+    )
+
+    response = client.get("/v1/usage", headers={"Authorization": "Bearer sk-test"})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "quota_exhausted",
+        "reason": "quota_exhausted",
+        "is_active": False,
+        "is_valid": True,
+        "quota_exhausted": True,
+        "remaining": 0.0,
+        "balance": 0.0,
+        "unit": "USD",
+        "message": "余额不足（剩余: $0.00）",
+    }
 
 
 def test_public_openai_model_responses_use_gateway_owner() -> None:

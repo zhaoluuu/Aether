@@ -91,7 +91,7 @@
               <TableHead class="min-w-[100px] h-12 font-semibold">
                 最后使用
               </TableHead>
-              <TableHead class="min-w-[80px] h-12 font-semibold text-center">
+              <TableHead class="min-w-[132px] h-12 font-semibold text-center">
                 操作
               </TableHead>
             </TableRow>
@@ -212,6 +212,15 @@
                     variant="ghost"
                     size="icon"
                     class="h-8 w-8"
+                    title="导入 CC Switch"
+                    @click="openCcSwitchDialog(apiKey)"
+                  >
+                    <Upload class="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    class="h-8 w-8"
                     :title="apiKey.is_locked ? '已锁定' : '删除'"
                     :disabled="apiKey.is_locked"
                     @click="confirmDelete(apiKey)"
@@ -292,6 +301,15 @@
                   @click="toggleApiKey(apiKey)"
                 >
                   <Power class="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-7 w-7"
+                  title="导入 CC Switch"
+                  @click="openCcSwitchDialog(apiKey)"
+                >
+                  <Upload class="h-3.5 w-3.5" />
                 </Button>
                 <Button
                   variant="ghost"
@@ -510,6 +528,102 @@
       </template>
     </Dialog>
 
+    <Dialog
+      v-model="showCcSwitchDialog"
+      size="lg"
+    >
+      <template #header>
+        <div class="border-b border-border px-6 py-4">
+          <div class="flex items-center gap-3">
+            <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-100 dark:bg-sky-900/30 flex-shrink-0">
+              <Upload class="h-5 w-5 text-sky-600 dark:text-sky-400" />
+            </div>
+            <div class="flex-1 min-w-0">
+              <h3 class="text-lg font-semibold text-foreground leading-tight">
+                导入到 CC Switch
+              </h3>
+              <p class="text-xs text-muted-foreground">
+                选择要导入的客户端类型，系统会自动生成对应的 CC Switch 深链
+              </p>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <div class="space-y-4">
+        <div
+          v-if="ccSwitchTargetKey"
+          class="rounded-lg border border-border/60 bg-muted/20 px-4 py-3"
+        >
+          <div class="text-sm font-semibold text-foreground truncate">
+            {{ ccSwitchTargetKey.name }}
+          </div>
+          <div class="mt-1 text-xs text-muted-foreground">
+            {{ ccSwitchTargetKey.key_display || 'sk-••••••••' }}
+          </div>
+        </div>
+
+        <div class="grid gap-3 sm:grid-cols-3">
+          <button
+            v-for="option in ccSwitchClientOptions"
+            :key="option.value"
+            type="button"
+            class="rounded-xl border px-4 py-4 text-left transition-all"
+            :class="selectedCcSwitchClient === option.value
+              ? 'border-primary bg-primary/5 shadow-sm'
+              : 'border-border/60 bg-background hover:border-primary/40 hover:bg-muted/20'"
+            @click="selectedCcSwitchClient = option.value"
+          >
+            <div class="flex items-start gap-3">
+              <div
+                class="flex h-10 w-10 items-center justify-center rounded-lg shrink-0"
+                :class="option.iconBgClass"
+              >
+                <component
+                  :is="option.icon"
+                  class="h-5 w-5"
+                  :class="option.iconClass"
+                />
+              </div>
+              <div class="min-w-0">
+                <div class="text-sm font-semibold text-foreground">
+                  {{ option.label }}
+                </div>
+                <div class="mt-1 text-xs text-muted-foreground leading-5">
+                  {{ option.description }}
+                </div>
+              </div>
+            </div>
+          </button>
+        </div>
+
+        <p class="text-xs text-muted-foreground">
+          导入时会读取该 API Key 的完整密钥，仅用于本次生成 CC Switch 配置。
+        </p>
+      </div>
+
+      <template #footer>
+        <Button
+          variant="outline"
+          class="h-11 px-6"
+          @click="closeCcSwitchDialog"
+        >
+          取消
+        </Button>
+        <Button
+          class="h-11 px-6 shadow-lg shadow-primary/20"
+          :disabled="ccSwitchImporting || !ccSwitchTargetKey"
+          @click="confirmCcSwitchImport"
+        >
+          <Loader2
+            v-if="ccSwitchImporting"
+            class="animate-spin h-4 w-4 mr-2"
+          />
+          {{ ccSwitchImporting ? '导入中...' : '导入到 CC Switch' }}
+        </Button>
+      </template>
+    </Dialog>
+
     <!-- 删除确认对话框 -->
     <AlertDialog
       v-model="showDeleteDialog"
@@ -543,8 +657,9 @@ import {
   TableRow
 } from '@/components/ui'
 import RefreshButton from '@/components/ui/refresh-button.vue'
-import { Plus, Key, Copy, Trash2, Loader2, Activity, CheckCircle, Power, SquarePen } from 'lucide-vue-next'
+import { Plus, Key, Copy, Trash2, Loader2, Activity, CheckCircle, Power, SquarePen, Upload, Bot, Sparkles, Terminal } from 'lucide-vue-next'
 import { useToast } from '@/composables/useToast'
+import { useSiteInfo } from '@/composables/useSiteInfo'
 import { log } from '@/utils/logger'
 import { parseApiError } from '@/utils/errorParser'
 import { formatRateLimitSimple } from '@/utils/format'
@@ -552,11 +667,13 @@ import { parseNumberInput } from '@/utils/form'
 import { getErrorStatus } from '@/types/api-error'
 
 const { success, error: showError } = useToast()
+const { siteName } = useSiteInfo()
 
 const apiKeys = ref<ApiKey[]>([])
 const loading = ref(false)
 const creating = ref(false)
 const deleting = ref(false)
+const ccSwitchImporting = ref(false)
 
 // 分页相关
 const currentPage = ref(1)
@@ -570,6 +687,7 @@ const paginatedApiKeys = computed(() => {
 const showCreateDialog = ref(false)
 const showKeyDialog = ref(false)
 const showDeleteDialog = ref(false)
+const showCcSwitchDialog = ref(false)
 
 const newKeyName = ref('')
 const newKeyRateLimit = ref<number | undefined>(undefined)
@@ -579,6 +697,35 @@ const newKeyValue = ref('')
 const keyToDelete = ref<ApiKey | null>(null)
 const editingApiKey = ref<ApiKey | null>(null)
 const modelOptions = ref<Array<{ value: string; label: string }>>([])
+const ccSwitchTargetKey = ref<ApiKey | null>(null)
+const selectedCcSwitchClient = ref<'claude' | 'gemini' | 'codex'>('claude')
+
+const ccSwitchClientOptions = [
+  {
+    value: 'claude' as const,
+    label: 'Claude',
+    description: '导入为 Claude Code 使用的提供商配置',
+    icon: Bot,
+    iconBgClass: 'bg-orange-100 dark:bg-orange-900/30',
+    iconClass: 'text-orange-600 dark:text-orange-400',
+  },
+  {
+    value: 'gemini' as const,
+    label: 'Gemini',
+    description: '导入为 Gemini CLI 使用的提供商配置',
+    icon: Sparkles,
+    iconBgClass: 'bg-sky-100 dark:bg-sky-900/30',
+    iconClass: 'text-sky-600 dark:text-sky-400',
+  },
+  {
+    value: 'codex' as const,
+    label: 'Codex',
+    description: '导入为 Codex CLI 使用的提供商配置',
+    icon: Terminal,
+    iconBgClass: 'bg-emerald-100 dark:bg-emerald-900/30',
+    iconClass: 'text-emerald-600 dark:text-emerald-400',
+  },
+]
 
 onMounted(() => {
   loadApiKeys()
@@ -690,6 +837,18 @@ function confirmDelete(apiKey: ApiKey) {
   showDeleteDialog.value = true
 }
 
+function openCcSwitchDialog(apiKey: ApiKey) {
+  ccSwitchTargetKey.value = apiKey
+  selectedCcSwitchClient.value = 'claude'
+  showCcSwitchDialog.value = true
+}
+
+function closeCcSwitchDialog() {
+  showCcSwitchDialog.value = false
+  ccSwitchTargetKey.value = null
+  selectedCcSwitchClient.value = 'claude'
+}
+
 async function deleteApiKey() {
   if (!keyToDelete.value) return
 
@@ -719,6 +878,72 @@ async function toggleApiKey(apiKey: ApiKey) {
   } catch (error) {
     log.error('切换密钥状态失败:', error)
     showError('操作失败')
+  }
+}
+
+async function confirmCcSwitchImport() {
+  if (!ccSwitchTargetKey.value) {
+    showError('未找到要导入的 API Key')
+    return
+  }
+
+  ccSwitchImporting.value = true
+
+  try {
+    const response = await meApi.getFullApiKey(ccSwitchTargetKey.value.id)
+    const apiKeyValue = response.key?.trim()
+
+    if (!apiKeyValue) {
+      showError('未获取到完整 API Key，请稍后重试')
+      return
+    }
+
+    const baseUrl = window.location.origin
+    const endpoint = selectedCcSwitchClient.value === 'codex' ? `${baseUrl}/v1` : baseUrl
+    const providerName = `${(siteName.value || 'Aether').trim() || 'Aether'} - ${ccSwitchTargetKey.value.name}`
+    const usageScript = `({
+      request: {
+        url: "{{baseUrl}}/v1/usage",
+        method: "GET",
+        headers: { "Authorization": "Bearer {{apiKey}}" }
+      },
+      extractor: function(response) {
+        const remaining = response?.remaining ?? response?.balance;
+        return {
+          isValid: response?.is_active ?? response?.is_valid ?? false,
+          remaining,
+          unit: response?.unit ?? "USD"
+        };
+      }
+    })`
+    const params = new URLSearchParams({
+      resource: 'provider',
+      app: selectedCcSwitchClient.value,
+      name: providerName,
+      homepage: baseUrl,
+      endpoint,
+      apiKey: apiKeyValue,
+      configFormat: 'json',
+      usageEnabled: 'true',
+      usageScript: btoa(usageScript),
+      usageAutoInterval: '30',
+    })
+    const deeplink = `ccswitch://v1/import?${params.toString()}`
+
+    window.open(deeplink, '_self')
+
+    setTimeout(() => {
+      if (document.hasFocus()) {
+        showError('未检测到 CC Switch，请确认客户端已安装')
+      }
+    }, 120)
+
+    closeCcSwitchDialog()
+  } catch (error) {
+    log.error('导入 CC Switch 失败:', error)
+    showError(parseApiError(error, '导入 CC Switch 失败'))
+  } finally {
+    ccSwitchImporting.value = false
   }
 }
 
