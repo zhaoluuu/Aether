@@ -675,7 +675,7 @@ class Wallet(Base):
     gift_balance = Column(Numeric(20, 8), nullable=False, default=0)
     # finite: 按余额校验；unlimited: 忽略余额放行，但仍统计消费
     limit_mode = Column(String(20), nullable=False, default="finite")
-    currency = Column(String(3), nullable=False, default="USD")
+    currency = Column(String(3), nullable=False, default="CNY")
     status = Column(String(20), nullable=False, default="active")
 
     total_recharged = Column(Numeric(20, 8), nullable=False, default=0)

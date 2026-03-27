@@ -137,6 +137,33 @@ class Config:
 
         # 支付回调安全配置（公开回调入口必须携带该共享密钥）
         self.payment_callback_secret = os.getenv("PAYMENT_CALLBACK_SECRET", "").strip()
+       
+        # Alipay 配置
+        self.alipay_app_id = os.getenv("ALIPAY_APP_ID", "").strip()
+        self.alipay_debug = os.getenv("ALIPAY_DEBUG", "true").lower() == "true"
+
+        # 密钥路径：certs/alipay/{debug|prod}/{app_private_key.pem|alipay_public_key.pem}
+        base_dir = Path(__file__).parent.parent.parent  # 项目根目录
+        alipay_cert_dir = base_dir / "certs" / "alipay" / ("debug" if self.alipay_debug else "prod")
+        
+        priv_key_path = alipay_cert_dir / "app_private_key.pem"
+        pub_key_path = alipay_cert_dir / "alipay_public_key.pem"
+
+        def _read_cert_file(path: Path) -> str:
+            if path.exists():
+                try:
+                    return path.read_text(encoding="utf-8").strip()
+                except Exception as e:
+                    # 避免循环导入，延迟导入 logger
+                    try:
+                        from src.core.logger import logger
+                        logger.error(f"Failed to read Alipay cert file {path}: {e}")
+                    except ImportError:
+                        print(f"Failed to read Alipay cert file {path}: {e}")
+            return ""
+
+        self.alipay_private_key = _read_cert_file(priv_key_path)
+        self.alipay_public_key = _read_cert_file(pub_key_path)
 
         self.public_api_rate_limit = int(os.getenv("PUBLIC_API_RATE_LIMIT", "60"))
 
